@@ -7,15 +7,12 @@ export class FPAAControls {
     this.camera = camera;
     this.domElement = domElement;
 
-    // Inicialização do OrbitControls
     this.orbit = new OrbitControls(camera, domElement);
     this.orbit.enabled = false;
     this.orbit.target.set(0, 4, 0);
 
-    // Inicialização do PointerLockControls
     this.pointerControls = new PointerLockControls(camera, document.body);
 
-    // Variáveis de Estado
     this.isOrbitActive = false;
     this.savedFPAAPosition = new THREE.Vector3();
     this.savedFPAARotation = new THREE.Euler();
@@ -24,9 +21,13 @@ export class FPAAControls {
     this.velocity = new THREE.Vector3();
     this.direction = new THREE.Vector3();
     this.clock = new THREE.Clock();
+    
     this.speed = 20.0;
+    this.jumpForce = 15.0; // Força do pulo
+    this.gravity = 40.0;   // Peso da gravidade
+    this.canJump = true;   // Controle para evitar pulos infinitos no ar
+    this.playerHeight = 2.0; // Altura padrão da câmera
 
-    // Inicia os eventos de escuta
     this._initEvents();
   }
 
@@ -62,6 +63,12 @@ export class FPAAControls {
           case 'ArrowLeft': case 'KeyA': this.moveState.left = true; break;
           case 'ArrowDown': case 'KeyS': this.moveState.backward = true; break;
           case 'ArrowRight': case 'KeyD': this.moveState.right = true; break;
+          case 'Space': 
+            if (this.canJump) {
+              this.velocity.y = this.jumpForce;
+              this.canJump = false;
+            }
+            break;
         }
       }
     });
@@ -82,8 +89,12 @@ export class FPAAControls {
     const delta = this.clock.getDelta();
     
     if (this.pointerControls.isLocked && !this.isOrbitActive) {
+      // Zeramos apenas X e Z a cada frame. Y é cumulativo (gravidade).
       this.velocity.x = 0;
       this.velocity.z = 0;
+      
+      // Aplica a gravidade constantemente puxando para baixo
+      this.velocity.y -= this.gravity * delta;
       
       this.direction.z = Number(this.moveState.forward) - Number(this.moveState.backward);
       this.direction.x = Number(this.moveState.right) - Number(this.moveState.left);
@@ -94,6 +105,17 @@ export class FPAAControls {
       
       this.pointerControls.moveRight(-this.velocity.x);
       this.pointerControls.moveForward(-this.velocity.z);
+      
+      // Move a câmera no eixo Y com base na gravidade ou pulo
+      this.camera.position.y += this.velocity.y * delta;
+      
+
+      // cravamos o chão na altura dos olhos do jogador.
+      if (this.camera.position.y < this.playerHeight) {
+        this.velocity.y = 0;
+        this.camera.position.y = this.playerHeight;
+        this.canJump = true; // Libera o pulo novamente ao tocar o chão
+      }
     } 
   }
 }
