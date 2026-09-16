@@ -9,8 +9,9 @@ import {
   createGroundPlaneXZ
 } from '../libs/util/util.js';
 
-// --- IMPORTANTE: Importação do novo arquivo de controles ---
 import { FPAAControls } from './cameraControls.js';
+
+import { createWeapon } from './weapon.js';
 
 const scene = new THREE.Scene();
 const renderer = initRenderer();
@@ -22,6 +23,8 @@ initDefaultBasicLight(scene);
 
 // --- Inicialização encapsulada dos controles da câmera ---
 const cameraControls = new FPAAControls(camera, renderer.domElement);
+
+const weapon = createWeapon(camera);
 
 const materials = {
   ground: setDefaultMaterial('rgb(83, 184, 16)'),
