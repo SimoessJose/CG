@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from '../build/jsm/controls/OrbitControls.js';
-import { PointerLockControls } from '../build/jsm/controls/PointerLockControls.js';
 import {
   initRenderer,
   initCamera,
@@ -11,35 +9,19 @@ import {
   createGroundPlaneXZ
 } from '../libs/util/util.js';
 
+// --- IMPORTANTE: Importação do novo arquivo de controles ---
+import { FPAAControls } from './cameraControls.js';
+
 const scene = new THREE.Scene();
 const renderer = initRenderer();
 
-// Posição inicial da câmera ajustada para o modo FPAA (dentro do castelo)
 const camera = initCamera(new THREE.Vector3(0, 2, 10));
-
-// Inicialização dos controles Orbit e PointerLock
-const orbit = new OrbitControls(camera, renderer.domElement);
-orbit.enabled = false; // Inicia desativado, pois o padrão será primeira pessoa
-orbit.target.set(0, 4, 0);
-
-const pointerControls = new PointerLockControls(camera, document.body);
-
-// scene.add(pointerControls.getObject());
+scene.add(camera);
 
 initDefaultBasicLight(scene);
-scene.add(camera);
-orbit.update();
 
-// Variáveis de estado para o controle de câmera
-let isOrbitActive = false;
-const savedFPAAPosition = new THREE.Vector3();
-const savedFPAARotation = new THREE.Euler();
-
-const moveState = { forward: false, backward: false, left: false, right: false };
-const velocity = new THREE.Vector3();
-const direction = new THREE.Vector3();
-const clock = new THREE.Clock();
-const speed = 20.0;
+// --- Inicialização encapsulada dos controles da câmera ---
+const cameraControls = new FPAAControls(camera, renderer.domElement);
 
 const materials = {
   ground: setDefaultMaterial('rgb(83, 184, 16)'),
@@ -175,53 +157,6 @@ createCastle();
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 
-// Lógica de Eventos para Controles FPAA e Orbital
-document.body.addEventListener('click', () => {
-  if (!isOrbitActive) pointerControls.lock();
-});
-
-document.addEventListener('keydown', (event) => {
-  if (event.key === 'c' || event.key === 'C') {
-    isOrbitActive = !isOrbitActive;
-    
-    if (isOrbitActive) {
-      pointerControls.unlock();
-      savedFPAAPosition.copy(camera.position);
-      savedFPAARotation.copy(camera.rotation);
-      
-      orbit.enabled = true;
-      camera.position.set(38, 30, 38);
-      orbit.target.set(0, 4, 0); 
-      orbit.update();
-    } else {
-      orbit.enabled = false;
-      camera.position.copy(savedFPAAPosition);
-      camera.rotation.copy(savedFPAARotation);
-      pointerControls.lock();
-    }
-  }
-
-  if (!isOrbitActive) {
-    switch (event.code) {
-      case 'ArrowUp': case 'KeyW': moveState.forward = true; break;
-      case 'ArrowLeft': case 'KeyA': moveState.left = true; break;
-      case 'ArrowDown': case 'KeyS': moveState.backward = true; break;
-      case 'ArrowRight': case 'KeyD': moveState.right = true; break;
-    }
-  }
-});
-
-document.addEventListener('keyup', (event) => {
-  if (!isOrbitActive) {
-    switch (event.code) {
-      case 'ArrowUp': case 'KeyW': moveState.forward = false; break;
-      case 'ArrowLeft': case 'KeyA': moveState.left = false; break;
-      case 'ArrowDown': case 'KeyS': moveState.backward = false; break;
-      case 'ArrowRight': case 'KeyD': moveState.right = false; break;
-    }
-  }
-});
-
 const controlsInfo = new InfoBox();
 controlsInfo.add('FPAA - Castelo de Bodiam');
 controlsInfo.add('Clique na tela para iniciar');
@@ -232,24 +167,8 @@ controlsInfo.show();
 function render() {
   requestAnimationFrame(render);
   
-  if (pointerControls.isLocked && !isOrbitActive) {
-    const delta = clock.getDelta();
-    
-    velocity.x = 0;
-    velocity.z = 0;
-    
-    direction.z = Number(moveState.forward) - Number(moveState.backward);
-    direction.x = Number(moveState.right) - Number(moveState.left);
-    direction.normalize();
-    
-    if (moveState.forward || moveState.backward) velocity.z -= direction.z * speed * delta;
-    if (moveState.left || moveState.right) velocity.x -= direction.x * speed * delta;
-    
-    pointerControls.moveRight(-velocity.x);
-    pointerControls.moveForward(-velocity.z);
-  } else if (isOrbitActive) {
-    clock.getDelta(); 
-  }
+  // --- Atualiza os cálculos de física de movimento da câmera a cada frame ---
+  cameraControls.update();
   
   renderer.render(scene, camera);
 }
