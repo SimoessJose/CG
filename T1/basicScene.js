@@ -10,8 +10,9 @@ import {
 } from '../libs/util/util.js';
 
 import { FPAAControls } from './cameraControls.js';
-
 import { createWeapon } from './weapon.js';
+// --- NOVO: Importando o sistema de tiros ---
+import { ShootingSystem } from './shootingSystem.js';
 
 const scene = new THREE.Scene();
 const renderer = initRenderer();
@@ -21,10 +22,12 @@ scene.add(camera);
 
 initDefaultBasicLight(scene);
 
-// --- Inicialização encapsulada dos controles da câmera ---
+// Inicialização encapsulada dos controles da câmera
 const cameraControls = new FPAAControls(camera, renderer.domElement);
-
 const weapon = createWeapon(camera);
+
+// --- NOVO: Instanciando o Sistema de Tiros ---
+const shootingSystem = new ShootingSystem(scene, camera, weapon);
 
 const materials = {
   ground: setDefaultMaterial('rgb(83, 184, 16)'),
@@ -160,20 +163,40 @@ createCastle();
 
 window.addEventListener('resize', () => onWindowResize(camera, renderer), false);
 
+// --- NOVO: Escutando cliques para atirar ---
+document.body.addEventListener('mousedown', (event) => {
+  // Confirma se o jogo está ativo (mouse travado na tela)
+  if (document.pointerLockElement === document.body) {
+    // 0 = Botão esquerdo, 2 = Botão direito
+    if (event.button === 0 || event.button === 2) {
+      shootingSystem.shoot();
+    }
+  }
+});
+
 const controlsInfo = new InfoBox();
 controlsInfo.add('FPAA - Castelo de Bodiam');
 controlsInfo.add('Clique na tela para iniciar');
 controlsInfo.add('WASD/Setas: Movimentar');
 controlsInfo.add('C: Alternar Câmera Orbital/FPAA');
+controlsInfo.add('Mouse: Atirar');
 controlsInfo.show();
+
+// --- NOVO: Relógio global para gerenciar o delta time ---
+const clock = new THREE.Clock();
 
 function render() {
   requestAnimationFrame(render);
   
-  // --- Atualiza os cálculos de física de movimento da câmera a cada frame ---
+  const delta = clock.getDelta();
+  
+  // Atualiza a física de movimento da câmera 
   cameraControls.update();
+  
+  // --- NOVO: Atualiza a movimentação e física dos tiros ---
+  shootingSystem.update(delta);
   
   renderer.render(scene, camera);
 }
 
-render();
+render();c
