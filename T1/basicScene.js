@@ -21,142 +21,311 @@ const camera = initCamera(new THREE.Vector3(0, 2, 10));
 scene.add(camera);
 
 initDefaultBasicLight(scene);
-
 // Inicialização encapsulada dos controles da câmera
 const cameraControls = new FPAAControls(camera, renderer.domElement);
 const weapon = createWeapon(camera);
 
 // --- NOVO: Instanciando o Sistema de Tiros ---
 const shootingSystem = new ShootingSystem(scene, camera, weapon);
-
+// ---------------------------------------------------------------------------
+// Materiais
+// ---------------------------------------------------------------------------
 const materials = {
-  ground: setDefaultMaterial('rgb(83, 184, 16)'),
+  ground: setDefaultMaterial('rgb(70, 140, 45)'),
+  water: setDefaultMaterial('rgb(30, 90, 120)'),
   stone: setDefaultMaterial('rgb(150, 145, 125)'),
   stoneDark: setDefaultMaterial('rgb(105, 100, 90)'),
+  stoneLight: setDefaultMaterial('rgb(175, 170, 150)'),
   wood: setDefaultMaterial('rgb(95, 55, 30)'),
   roof: setDefaultMaterial('rgb(75, 45, 35)')
 };
 
-function addBox(size, position, material, name) {
+// ---------------------------------------------------------------------------
+// Grupos
+// ---------------------------------------------------------------------------
+const castleGroup = new THREE.Group();
+const wallsGroup = new THREE.Group();
+const towersGroup = new THREE.Group();
+const gatehouseGroup = new THREE.Group();
+const buildingsGroup = new THREE.Group();
+
+wallsGroup.name = 'walls';
+towersGroup.name = 'towers';
+gatehouseGroup.name = 'gatehouse';
+buildingsGroup.name = 'buildings';
+
+castleGroup.add(wallsGroup, towersGroup, gatehouseGroup, buildingsGroup);
+scene.add(castleGroup);
+
+export const doorPivots = [];
+
+// ---------------------------------------------------------------------------
+// Helpers de Geometria
+// ---------------------------------------------------------------------------
+function addBox(size, position, material, name, group) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   mesh.position.set(...position);
   mesh.name = name;
-  scene.add(mesh);
+  group.add(mesh);
   return mesh;
 }
 
-function addCylinder(radius, height, position, material, name) {
+function addCylinder(radius, height, position, material, name, group) {
   const mesh = new THREE.Mesh(
     new THREE.CylinderGeometry(radius, radius, height, 16),
     material
   );
   mesh.position.set(...position);
   mesh.name = name;
-  scene.add(mesh);
+  group.add(mesh);
   return mesh;
 }
 
-function addCone(radius, height, position, material, name) {
+function addCone(radius, height, position, material, name, group) {
   const mesh = new THREE.Mesh(
     new THREE.ConeGeometry(radius, height, 8),
     material
   );
   mesh.position.set(...position);
   mesh.name = name;
-  scene.add(mesh);
+  group.add(mesh);
   return mesh;
 }
 
-function createGround() {
-  const ground = createGroundPlaneXZ(70, 70, 10, 10, 'rgb(83, 184, 16)');
-  scene.add(ground);
+function createDoorWithPivot(position, size, name, group) {
+  const [x, y, z] = position;
+  const [width, height, depth] = size;
+
+  const pivot = new THREE.Object3D();
+  pivot.position.set(x - width / 2, y, z);
+  pivot.name = `${name} pivot`;
+
+  const doorMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(width, height, depth),
+    materials.wood
+  );
+  doorMesh.position.set(width / 2, height / 2, 0);
+  doorMesh.name = name;
+
+  pivot.add(doorMesh);
+  group.add(pivot);
+  doorPivots.push(pivot);
+  return pivot;
 }
 
-function createWalls() {
-  const wallHeight = 16;
-  const wallThickness = 4;
-  const wallLength = 68;
+// Escada Reta (para prédios internos)
+function createStaircase(baseX, baseZ, direction, totalHeight, group, name = 'stair') {
+  const stepHeight = 0.5;
+  const stepDepth = 1.1;
+  const stepWidth = 4;
+  const numSteps = Math.ceil(totalHeight / stepHeight);
 
-  addBox([wallLength, wallHeight, wallThickness], [0, wallHeight / 2, -17], materials.stone, 'north wall');
-  addBox([wallThickness, wallHeight, wallLength], [-17, wallHeight / 2, 0], materials.stone, 'west wall');
-  addBox([wallThickness, wallHeight, wallLength], [17, wallHeight / 2, 0], materials.stone, 'east wall');
-
-  addBox([12, wallHeight, wallThickness], [-11, wallHeight / 2, 17], materials.stone, 'south wall left');
-  addBox([12, wallHeight, wallThickness], [11, wallHeight / 2, 17], materials.stone, 'south wall right');
-
-  createWallBattlements();
+  for (let i = 0; i < numSteps; i += 1) {
+    const y = stepHeight / 2 + i * stepHeight;
+    const z = baseZ + direction * i * stepDepth;
+    addBox(
+      [stepWidth, stepHeight, stepDepth],
+      [baseX, y, z],
+      materials.stoneDark,
+      `${name} step ${i + 1}`,
+      group
+    );
+  }
+  return numSteps * stepDepth;
 }
 
-function createWallBattlements() {
-  const y = 8.8;
-  const merlonSize = [1.5, 1.6, 1.5];
+// Escada em L com Corrimão (acesso ao muro)
+function createLShapedStaircase(cornerX, cornerZ, xDir, zDir, totalHeight, group, name = 'stair') {
+  const stepHeight = 0.5;
+  const stepDepth = 1.2;
+  const stepWidth = 4;
+  const stepsPerFlight = Math.ceil((totalHeight / 2) / stepHeight);
 
-  for (let coordinate = -15; coordinate <= 15; coordinate += 3) {
-    addBox(merlonSize, [coordinate, y, -17], materials.stone, 'north merlon');
-    addBox(merlonSize, [coordinate, y, 17], materials.stone, 'south merlon');
-    addBox(merlonSize, [-17, y, coordinate], materials.stone, 'west merlon');
-    addBox(merlonSize, [17, y, coordinate], materials.stone, 'east merlon');
+  // Lance 1
+  for (let i = 0; i < stepsPerFlight; i += 1) {
+    const y = stepHeight / 2 + i * stepHeight;
+    const z = cornerZ + zDir * ((stepsPerFlight - i) * stepDepth);
+    addBox([stepWidth, stepHeight, stepDepth], [cornerX, y, z], materials.stoneDark, `${name} lance1 step ${i + 1}`, group);
+    
+    const railX = cornerX + xDir * (stepWidth / 2 - 0.2);
+    if (i % 3 === 0 || i === stepsPerFlight - 1) {
+      addBox([0.2, 2.5, 0.2], [railX, y + 1.25, z], materials.wood, `${name} rail post ${i}`, group);
+    }
+    addBox([0.2, 0.3, stepDepth], [railX, y + 2.5, z], materials.wood, `${name} rail bar ${i}`, group);
+  }
+
+  // Patamar
+  const landingY = totalHeight / 2;
+  addBox([stepWidth, stepHeight, stepWidth], [cornerX, landingY, cornerZ], materials.stoneDark, `${name} landing`, group);
+
+  // Lance 2
+  for (let i = 1; i <= stepsPerFlight; i += 1) {
+    const y = landingY + stepHeight / 2 + (i - 1) * stepHeight;
+    const x = cornerX + xDir * (i * stepDepth);
+    addBox([stepDepth, stepHeight, stepWidth], [x, y, cornerZ], materials.stoneDark, `${name} lance2 step ${i}`, group);
+    
+    const railZ = cornerZ + zDir * (stepWidth / 2 - 0.2);
+    if (i % 3 === 0 || i === stepsPerFlight) {
+      addBox([0.2, 2.5, 0.2], [x, y + 1.25, railZ], materials.wood, `${name} rail post 2_${i}`, group);
+    }
+    addBox([stepDepth, 0.3, 0.2], [x, y + 2.5, railZ], materials.wood, `${name} rail bar 2_${i}`, group);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Terreno, Fosso d'Água e Ponte de Acesso
+// ---------------------------------------------------------------------------
+function createGround() {
+  // Gramado externo
+  const outerGround = createGroundPlaneXZ(200, 200, 20, 20, 'rgb(70, 140, 45)');
+  scene.add(outerGround);
+
+  // Espelho d'água (Fosso)
+  const moat = new THREE.Mesh(new THREE.PlaneGeometry(130, 130), materials.water);
+  moat.rotation.x = -Math.PI / 2;
+  moat.position.y = 0.01;
+  scene.add(moat);
+
+  // Ilha central de pedra
+  const island = new THREE.Mesh(new THREE.PlaneGeometry(68, 68), materials.stoneLight);
+  island.rotation.x = -Math.PI / 2;
+  island.position.y = 0.02;
+  scene.add(island);
+
+  // Ponte de Acesso ao Portão Sul
+  const bridgeGroup = new THREE.Group();
+  addBox([8, 1, 30], [0, 0.5, 45], materials.wood, 'bridge floor', bridgeGroup);
+  
+  for (let z = 33; z <= 57; z += 8) {
+    addBox([1.5, 4, 1.5], [-3.5, -1.5, z], materials.stoneDark, 'bridge pillar L', bridgeGroup);
+    addBox([1.5, 4, 1.5], [3.5, -1.5, z], materials.stoneDark, 'bridge pillar R', bridgeGroup);
+  }
+  scene.add(bridgeGroup);
+}
+
+// ---------------------------------------------------------------------------
+// Muralhas, Ameias e Consolos (Machicolations)
+// ---------------------------------------------------------------------------
+const WALL_HEIGHT = 16;
+const WALL_THICKNESS = 4;
+const WALL_LENGTH = 60;
+
+function createWalls() {
+  // Muralhas
+  addBox([WALL_LENGTH, WALL_HEIGHT, WALL_THICKNESS], [0, WALL_HEIGHT / 2, -30], materials.stone, 'north wall', wallsGroup);
+  addBox([WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH], [30, WALL_HEIGHT / 2, 0], materials.stone, 'east wall', wallsGroup);
+  addBox([WALL_THICKNESS, WALL_HEIGHT, WALL_LENGTH], [-30, WALL_HEIGHT / 2, 0], materials.stone, 'west wall', wallsGroup);
+  addBox([22, WALL_HEIGHT, WALL_THICKNESS], [-19, WALL_HEIGHT / 2, 30], materials.stone, 'south wall left', wallsGroup);
+  addBox([22, WALL_HEIGHT, WALL_THICKNESS], [19, WALL_HEIGHT / 2, 30], materials.stone, 'south wall right', wallsGroup);
+
+  createWallBattlements();
+  createMachicolations();
+
+  // Escada em L interna
+  createLShapedStaircase(-26, -26, 1, 1, WALL_HEIGHT, wallsGroup, 'wall access stair');
+}
+
+function createMachicolations() {
+  const y = WALL_HEIGHT - 0.5;
+  const corbelSize = [0.8, 1.2, 1.2];
+
+  for (let coord = -27; coord <= 27; coord += 3) {
+    addBox(corbelSize, [coord, y, -31], materials.stoneDark, 'corbel N', wallsGroup);
+    addBox(corbelSize, [coord, y, 31], materials.stoneDark, 'corbel S', wallsGroup);
+    addBox([1.2, 1.2, 0.8], [-31, y, coord], materials.stoneDark, 'corbel W', wallsGroup);
+    addBox([1.2, 1.2, 0.8], [31, y, coord], materials.stoneDark, 'corbel E', wallsGroup);
+  }
+}
+
+function createWallBattlements() {
+  const y = WALL_HEIGHT + 1;
+  const merlonSize = [2.5, 2, 2.5];
+
+  for (let coordinate = -27; coordinate <= 27; coordinate += 5) {
+    addBox(merlonSize, [coordinate, y, -30], materials.stone, 'north merlon', wallsGroup);
+    addBox(merlonSize, [-30, y, coordinate], materials.stone, 'west merlon', wallsGroup);
+    addBox(merlonSize, [coordinate, y, 30], materials.stone, 'south merlon', wallsGroup);
+    addBox(merlonSize, [30, y, coordinate], materials.stone, 'east merlon', wallsGroup);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Torres de Canto e Intermediárias (Bodiam style)
+// ---------------------------------------------------------------------------
 function createTowers() {
-  const towerPositions = [
-    [-38, 6, -17],
-    [38, 6, -17],
-    [-17, 6, 17],
-    [17, 6, 17]
+  // 4 Torres Cilíndricas nos Cantos
+  const cornerTowers = [
+    [-30, 8, -30],
+    [30, 8, -30],
+    [-30, 8, 30],
+    [30, 8, 30]
   ];
 
-  towerPositions.forEach((position, index) => {
-    addCylinder(4, 12, position, materials.stoneDark, `tower ${index + 1}`);
-    addCone(4.5, 3, [position[0], 13.5, position[2]], materials.roof, `tower roof ${index + 1}`);
+  cornerTowers.forEach((pos, index) => {
+    addCylinder(6, 18, pos, materials.stoneDark, `corner tower ${index + 1}`, towersGroup);
+    addCone(6.5, 4, [pos[0], 19.5, pos[2]], materials.roof, `tower roof ${index + 1}`, towersGroup);
 
     for (let merlon = 0; merlon < 8; merlon += 1) {
       const angle = (merlon / 8) * Math.PI * 2;
       addBox(
-        [1.2, 1.5, 1.2],
-        [position[0] + Math.cos(angle) * 3.2, 12.7, position[2] + Math.sin(angle) * 3.2],
+        [1.8, 2, 1.8],
+        [pos[0] + Math.cos(angle) * 4.8, WALL_HEIGHT + 2, pos[2] + Math.sin(angle) * 4.8],
         materials.stone,
-        `tower ${index + 1} merlon`
+        `tower ${index + 1} merlon`,
+        towersGroup
       );
     }
   });
+
+  // Torres Intermediárias Quadradas (Leste, Oeste e Norte/Postern Tower)
+  addBox([7, 18, 7], [31, 9, 0], materials.stoneDark, 'east mid tower', towersGroup);
+  addBox([7, 18, 7], [-31, 9, 0], materials.stoneDark, 'west mid tower', towersGroup);
+  addBox([7, 18, 7], [0, 9, -31], materials.stoneDark, 'north postern tower', towersGroup);
 }
 
+// ---------------------------------------------------------------------------
+// Gatehouse Imponente (Entrada Principal de Bodiam)
+// ---------------------------------------------------------------------------
 function createMainGate() {
-  addBox([2, 6, 0.6], [0, 3, 16.1], materials.wood, 'main gate');
-  addBox([3, 8, 3], [-4, 4, 16], materials.stoneDark, 'gatehouse left');
-  addBox([3, 8, 3], [4, 4, 16], materials.stoneDark, 'gatehouse right');
-  addBox([11, 2, 3], [0, 8.5, 16], materials.stoneDark, 'gatehouse top');
-  addBox([12, 1, 3.5], [0, 10, 16], materials.roof, 'gatehouse roof');
+  addBox([6, 18, 8], [-6, 9, 31], materials.stoneDark, 'gatehouse tower L', gatehouseGroup);
+  addBox([6, 18, 8], [6, 9, 31], materials.stoneDark, 'gatehouse tower R', gatehouseGroup);
+  addBox([18, 4, 8], [0, 15, 31], materials.stoneDark, 'gatehouse arch top', gatehouseGroup);
+  addBox([19, 2, 9], [0, 17.5, 31], materials.roof, 'gatehouse roof', gatehouseGroup);
+
+  createDoorWithPivot([0, 0, 31.1], [4, 10, 0.6], 'main gate door', gatehouseGroup);
 }
 
-function createBuilding(position, name) {
+// ---------------------------------------------------------------------------
+// Prédios Internos
+// ---------------------------------------------------------------------------
+function createBuilding(position, name, stairDirection) {
   const [x, z] = position;
-  addBox([10, 5, 8], [x, 2.5, z], materials.stone, `${name} walls`);
-  addBox([10.5, 1, 8.5], [x, 5.5, z], materials.roof, `${name} roof`);
-  addBox([2, 3, 0.5], [x, 1.5, z + 4.1], materials.wood, `${name} door`);
+  const group = new THREE.Group();
+  group.name = name;
+
+  addBox([16, 4, 12], [x, 2, z], materials.stone, `${name} ground floor`, group);
+  addBox([13.5, 4, 9.5], [x, 6, z], materials.stone, `${name} upper floor`, group);
+  addBox([16.5, 1.5, 12.5], [x, 8.75, z], materials.roof, `${name} roof`, group);
+  createDoorWithPivot([x, 0, z + 6.1], [3, 5, 0.5], `${name} door`, group);
+
+  const stairX = x < 0 ? x - 10 : x + 10;
+  const stairZ = stairDirection === 1 ? z - 4.4 : z + 4.4;
+  createStaircase(stairX, stairZ, stairDirection, 4, group, `${name} stair`);
+
+  buildingsGroup.add(group);
+  return group;
 }
 
-function createStairs() {
-  for (let step = 0; step < 12; step += 1) {
-    addBox(
-      [5, 0.5 + step * 0.90, 3],
-      [-13.5, 0.1 + step * 0.15, -3 - step * 1.1],
-      materials.stoneDark,
-      `stairs ${step + 1}`
-    );
-  }
-}
-
+// ---------------------------------------------------------------------------
+// Montagem Final
+// ---------------------------------------------------------------------------
 function createCastle() {
   createGround();
   createWalls();
   createTowers();
   createMainGate();
-  createBuilding([-7, 6], 'inner building one');
-  createBuilding([7, -6], 'inner building two');
-  createStairs();
+  createBuilding([-12, 10], 'inner building one', 1);
+  createBuilding([12, -10], 'inner building two', -1);
 }
 
 createCastle();
