@@ -17,7 +17,7 @@ const scene = new THREE.Scene();
 const renderer = initRenderer();
 
 // Câmera posicionada para visualizar a nova entrada longa
-const camera = initCamera(new THREE.Vector3(0, 15, 180)); 
+const camera = initCamera(new THREE.Vector3(0, 15, 150)); 
 scene.add(camera);
 
 initDefaultBasicLight(scene);
@@ -61,7 +61,6 @@ castleGroup.add(wallsGroup, towersGroup, gatehouseGroup, buildingsGroup);
 scene.add(castleGroup);
 
 export const doorPivots = [];
-
 export const collidableObjects = [];
 
 // ---------------------------------------------------------------------------
@@ -116,6 +115,7 @@ function createDoorWithPivot(position, size, name, group) {
   // Base de madeira da porta
   const woodBase = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), materials.wood);
   doorGroup.add(woodBase);
+  collidableObjects.push(woodBase); // Adicionado à colisão
 
   // Detalhes em Ferro (Faixas de reforço)
   const bandHeight = height * 0.08;
@@ -124,10 +124,12 @@ function createDoorWithPivot(position, size, name, group) {
   const topBand = new THREE.Mesh(new THREE.BoxGeometry(width, bandHeight, bandDepth), materials.iron);
   topBand.position.set(0, height * 0.3, 0);
   doorGroup.add(topBand);
+  collidableObjects.push(topBand); // Adicionado à colisão
 
   const bottomBand = new THREE.Mesh(new THREE.BoxGeometry(width, bandHeight, bandDepth), materials.iron);
   bottomBand.position.set(0, -height * 0.3, 0);
   doorGroup.add(bottomBand);
+  collidableObjects.push(bottomBand); // Adicionado à colisão
 
   // Maçaneta / Puxador de ferro
   const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.8, 8), materials.iron);
@@ -383,7 +385,7 @@ document.body.addEventListener('keydown', (event) => {
       const distance = intersects[0].distance;
       
       if (distance < 18) {
-        // Agora precisamos subir na hierarquia até achar o pivô (que tem os userData da porta)
+        // Sobe na hierarquia até achar o pivô (que tem os userData da porta)
         let pivot = intersects[0].object;
         while (pivot && pivot.userData.isOpen === undefined) {
           pivot = pivot.parent;
@@ -410,13 +412,52 @@ controlsInfo.show();
 
 const clock = new THREE.Clock();
 
+// Raycaster dedicado para o movimento (para evitar recriar todo frame)
+const movementRaycaster = new THREE.Raycaster();
+const PLAYER_RADIUS = 2.0; // Distância mínima da parede
+
 function render() {
   requestAnimationFrame(render);
   
   const delta = clock.getDelta();
-  cameraControls.update();
+  
+  // 1. Salva a posição exata antes do jogador se mover
+  const oldPosition = camera.position.clone();
+  
+  // 2. Atualiza os controles (isso tenta mover a câmera)
+  cameraControls.update(delta);
+  
+  // 3. Isola APENAS o movimento horizontal (X e Z) ignorando pulo/gravidade
+  const moveX = camera.position.x - oldPosition.x;
+  const moveZ = camera.position.z - oldPosition.z;
+  const horizontalMove = new THREE.Vector3(moveX, 0, moveZ);
+  const moveDistance = horizontalMove.length();
+  
+  // Se o jogador tentou andar para os lados ou para frente...
+  if (moveDistance > 0.001) {
+    const moveDirection = horizontalMove.clone().normalize();
+    
+    // Dispara um raio da posição antiga, APENAS na direção horizontal
+    movementRaycaster.set(oldPosition, moveDirection);
+    
+    // Checa colisão
+    const intersects = movementRaycaster.intersectObjects(collidableObjects, false);
+    
+    // Se bater em algo e a distância for menor que o movimento + o tamanho do jogador
+    if (intersects.length > 0 && intersects[0].distance < (moveDistance + PLAYER_RADIUS)) {
+      // COLISÃO DETECTADA!
+      // Reverte APENAS o movimento horizontal (X e Z)
+      camera.position.x = oldPosition.x;
+      camera.position.z = oldPosition.z;
+      
+      // Perceba que NÃO revertemos o camera.position.y
+      // Isso permite que o pulo e a gravidade funcionem normalmente!
+    }
+  }
+
   shootingSystem.update(delta);
   
+  // Animação das portas
   doorPivots.forEach((pivot) => {
     pivot.rotation.y = THREE.MathUtils.lerp(pivot.rotation.y, pivot.userData.targetAngle, delta * 5);
   });
