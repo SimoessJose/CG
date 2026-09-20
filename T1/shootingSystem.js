@@ -47,13 +47,13 @@ export class ShootingSystem {
       const moveDistance = p.userData.velocity.clone().multiplyScalar(delta);
       const stepLength = moveDistance.length();
 
-      // Raycast do tiro para checar colisão no caminho do frame
+      // Trajetória do raio de colisão do tiro
       const rayDir = p.userData.velocity.clone().normalize();
       this.raycaster.set(p.position, rayDir);
       
       const intersects = this.raycaster.intersectObjects(collidableObjects, false);
 
-      // Destrói se atingiu um objeto próximo, chão (y <= 0) ou se atingiu o alcance máximo
+      // Colisão com paredes/objetos, com o chão (y <= 0) ou limite de alcance
       if ((intersects.length > 0 && intersects[0].distance <= stepLength + 0.2) ||
           p.position.y <= 0 ||
           p.userData.distanceTraveled >= this.maxDistance) {

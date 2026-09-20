@@ -22,13 +22,13 @@ export class FPAAControls {
     this.velocity = new THREE.Vector3();
     this.clock = new THREE.Clock();
     
-    this.speed = 18.0;
+    this.speed = 22.0;
     this.jumpForce = 12.0;
     this.gravity = 35.0;
     this.canJump = true;
-    this.playerHeight = 2.0; // Altura do olho em relação ao chão
-    this.playerRadius = 0.8;  // Raio de colisão lateral
-    this.stepMaxHeight = 0.8; // Altura máxima de degrau para subir suavemente
+    this.playerHeight = 2.0; 
+    this.playerRadius = 0.8; 
+    this.stepMaxHeight = 0.8; // Permite absorver degraus e escadas suavemente
 
     this.raycaster = new THREE.Raycaster();
 
@@ -50,7 +50,7 @@ export class FPAAControls {
           this.savedFPAARotation.copy(this.camera.rotation);
           
           this.orbit.enabled = true;
-          this.camera.position.set(38, 30, 38);
+          this.camera.position.set(0, 80, 180);
           this.orbit.target.set(0, 4, 0); 
           this.orbit.update();
         } else {
@@ -91,10 +91,10 @@ export class FPAAControls {
 
   update() {
     const delta = this.clock.getDelta();
-    if (delta > 0.1) return; // Evita saltos por quedas bruscas de FPS
-    
+    if (delta > 0.1) return;
+
     if (this.pointerControls.isLocked && !this.isOrbitActive) {
-      // 1. Calcular Vetor de Deslocamento Desejado
+      // 1. Vetor de Direção de Movimento
       const moveVector = new THREE.Vector3();
       
       const forwardDir = new THREE.Vector3();
@@ -114,11 +114,11 @@ export class FPAAControls {
         moveVector.normalize().multiplyScalar(this.speed * delta);
       }
 
-      // 2. Colisão Horizontal + Efeito de Deslize nas Paredes
+      // 2. Colisão Horizontal + Efeito de Deslize na Parede
       if (moveVector.lengthSq() > 0) {
         const moveDir = moveVector.clone().normalize();
         const rayOrigin = this.camera.position.clone();
-        rayOrigin.y -= (this.playerHeight / 2); // Altura da cintura
+        rayOrigin.y -= (this.playerHeight / 2);
 
         this.raycaster.set(rayOrigin, moveDir);
         const collisions = this.raycaster.intersectObjects(collidableObjects, false);
@@ -127,22 +127,21 @@ export class FPAAControls {
           const hit = collisions[0];
           const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
 
-          // Projeta o vetor de movimento no plano da parede para desviar (deslizar)
+          // Projeta o vetor de movimento no plano do obstáculo para deslizar
           const dot = moveVector.dot(normal);
           moveVector.sub(normal.multiplyScalar(dot));
         }
       }
 
-      // Aplica o deslocamento horizontal tratado
       this.camera.position.x += moveVector.x;
       this.camera.position.z += moveVector.z;
 
-      // 3. Colisão Vertical, Degraus/Escadas e Gravidade
+      // 3. Colisão Vertical, Escadas e Queda Suave
       const downRayOrigin = this.camera.position.clone();
       this.raycaster.set(downRayOrigin, new THREE.Vector3(0, -1, 0));
       
       const groundHits = this.raycaster.intersectObjects(collidableObjects, false);
-      let groundY = 0; // Chão padrão
+      let groundY = 0;
 
       if (groundHits.length > 0) {
         groundY = groundHits[0].point.y;
@@ -151,17 +150,16 @@ export class FPAAControls {
       const targetEyeHeight = groundY + this.playerHeight;
       const heightDiff = targetEyeHeight - this.camera.position.y;
 
-      // Se a diferença de altura for pequena (escadas e degraus), ajusta suavemente
+      // Subida de degraus/escadas (Efeito rampa)
       if (heightDiff > 0 && heightDiff <= this.stepMaxHeight) {
         this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 15 * delta);
         this.velocity.y = 0;
         this.canJump = true;
       } else {
-        // Aplicação de Gravidade
+        // Gravidade e queda interpolada
         this.velocity.y -= this.gravity * delta;
         this.camera.position.y += this.velocity.y * delta;
 
-        // Tocou no chão/plataforma
         if (this.camera.position.y <= targetEyeHeight) {
           this.camera.position.y = targetEyeHeight;
           this.velocity.y = 0;
