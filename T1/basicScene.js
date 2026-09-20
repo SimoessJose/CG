@@ -20,7 +20,21 @@ const renderer = initRenderer();
 const camera = initCamera(new THREE.Vector3(0, 15, 150)); 
 scene.add(camera);
 
-initDefaultBasicLight(scene);
+// ============================================================================
+// ILUMINAÇÃO DE DIA / CÉU CLARO
+// ============================================================================
+
+// 1. Muda a cor do "fundo" do universo para um Azul Céu
+scene.background = new THREE.Color(0x87CEEB); // Código hexadecimal para "SkyBlue"
+
+// 2. Luz Ambiente (Luz rebatida do sol, que clareia as sombras para não ficarem 100% pretas)
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.6); // Cor branca, intensidade 0.6
+scene.add(ambientLight);
+
+// 3. Luz Direcional (Simula o Sol batendo diretamente no castelo)
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.2); // Cor branca, intensidade 1.2
+sunLight.position.set(150, 250, 100); // Coloca o sol alto e inclinado no céu
+scene.add(sunLight);
 
 const cameraControls = new FPAAControls(camera, renderer.domElement);
 const weapon = createWeapon(camera);
