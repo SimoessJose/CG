@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../build/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from '../build/jsm/controls/PointerLockControls.js';
-import { collidableObjects } from './basicScene.js';
+import { collidableObjects } from './gameState.js';
 
 export class FPAAControls {
   constructor(camera, domElement) {

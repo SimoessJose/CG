@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { setDefaultMaterial } from '../libs/util/util.js';
-import { collidableObjects } from './basicScene.js';
+import { collidableObjects } from './gameState.js';
 
 export class ShootingSystem {
   constructor(scene, camera, weaponMesh) {
