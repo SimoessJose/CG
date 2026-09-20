@@ -59,6 +59,8 @@ scene.add(castleGroup);
 
 export const doorPivots = [];
 
+export const collidableObjects = [];
+
 // ---------------------------------------------------------------------------
 // Helpers de Geometria
 // ---------------------------------------------------------------------------
@@ -67,6 +69,7 @@ function addBox(size, position, material, name, group) {
   mesh.position.set(...position);
   mesh.name = name;
   group.add(mesh);
+  collidableObjects.push(mesh);
   return mesh;
 }
 
@@ -78,6 +81,7 @@ function addCylinder(radius, height, position, material, name, group) {
   mesh.position.set(...position);
   mesh.name = name;
   group.add(mesh);
+  collidableObjects.push(mesh);
   return mesh;
 }
 
