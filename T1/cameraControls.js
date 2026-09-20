@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from '../build/jsm/controls/OrbitControls.js';
 import { PointerLockControls } from '../build/jsm/controls/PointerLockControls.js';
+import { collidableObjects } from './basicScene.js';
 
 export class FPAAControls {
   constructor(camera, domElement) {
@@ -19,14 +20,17 @@ export class FPAAControls {
     
     this.moveState = { forward: false, backward: false, left: false, right: false };
     this.velocity = new THREE.Vector3();
-    this.direction = new THREE.Vector3();
     this.clock = new THREE.Clock();
     
-    this.speed = 20.0;
-    this.jumpForce = 15.0; // Força do pulo
-    this.gravity = 40.0;   // Peso da gravidade
-    this.canJump = true;   // Controle para evitar pulos infinitos no ar
-    this.playerHeight = 2.0; // Altura padrão da câmera
+    this.speed = 18.0;
+    this.jumpForce = 12.0;
+    this.gravity = 35.0;
+    this.canJump = true;
+    this.playerHeight = 2.0; // Altura do olho em relação ao chão
+    this.playerRadius = 0.8;  // Raio de colisão lateral
+    this.stepMaxHeight = 0.8; // Altura máxima de degrau para subir suavemente
+
+    this.raycaster = new THREE.Raycaster();
 
     this._initEvents();
   }
@@ -87,35 +91,83 @@ export class FPAAControls {
 
   update() {
     const delta = this.clock.getDelta();
+    if (delta > 0.1) return; // Evita saltos por quedas bruscas de FPS
     
     if (this.pointerControls.isLocked && !this.isOrbitActive) {
-      // Zeramos apenas X e Z a cada frame. Y é cumulativo (gravidade).
-      this.velocity.x = 0;
-      this.velocity.z = 0;
+      // 1. Calcular Vetor de Deslocamento Desejado
+      const moveVector = new THREE.Vector3();
       
-      // Aplica a gravidade constantemente puxando para baixo
-      this.velocity.y -= this.gravity * delta;
-      
-      this.direction.z = Number(this.moveState.forward) - Number(this.moveState.backward);
-      this.direction.x = Number(this.moveState.right) - Number(this.moveState.left);
-      this.direction.normalize();
-      
-      if (this.moveState.forward || this.moveState.backward) this.velocity.z -= this.direction.z * this.speed * delta;
-      if (this.moveState.left || this.moveState.right) this.velocity.x -= this.direction.x * this.speed * delta;
-      
-      this.pointerControls.moveRight(-this.velocity.x);
-      this.pointerControls.moveForward(-this.velocity.z);
-      
-      // Move a câmera no eixo Y com base na gravidade ou pulo
-      this.camera.position.y += this.velocity.y * delta;
-      
+      const forwardDir = new THREE.Vector3();
+      this.camera.getWorldDirection(forwardDir);
+      forwardDir.y = 0;
+      forwardDir.normalize();
 
-      // cravamos o chão na altura dos olhos do jogador.
-      if (this.camera.position.y < this.playerHeight) {
-        this.velocity.y = 0;
-        this.camera.position.y = this.playerHeight;
-        this.canJump = true; // Libera o pulo novamente ao tocar o chão
+      const sideDir = new THREE.Vector3();
+      sideDir.crossVectors(this.camera.up, forwardDir).negate().normalize();
+
+      if (this.moveState.forward) moveVector.add(forwardDir);
+      if (this.moveState.backward) moveVector.sub(forwardDir);
+      if (this.moveState.right) moveVector.add(sideDir);
+      if (this.moveState.left) moveVector.sub(sideDir);
+
+      if (moveVector.lengthSq() > 0) {
+        moveVector.normalize().multiplyScalar(this.speed * delta);
       }
-    } 
+
+      // 2. Colisão Horizontal + Efeito de Deslize nas Paredes
+      if (moveVector.lengthSq() > 0) {
+        const moveDir = moveVector.clone().normalize();
+        const rayOrigin = this.camera.position.clone();
+        rayOrigin.y -= (this.playerHeight / 2); // Altura da cintura
+
+        this.raycaster.set(rayOrigin, moveDir);
+        const collisions = this.raycaster.intersectObjects(collidableObjects, false);
+
+        if (collisions.length > 0 && collisions[0].distance < moveVector.length() + this.playerRadius) {
+          const hit = collisions[0];
+          const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+
+          // Projeta o vetor de movimento no plano da parede para desviar (deslizar)
+          const dot = moveVector.dot(normal);
+          moveVector.sub(normal.multiplyScalar(dot));
+        }
+      }
+
+      // Aplica o deslocamento horizontal tratado
+      this.camera.position.x += moveVector.x;
+      this.camera.position.z += moveVector.z;
+
+      // 3. Colisão Vertical, Degraus/Escadas e Gravidade
+      const downRayOrigin = this.camera.position.clone();
+      this.raycaster.set(downRayOrigin, new THREE.Vector3(0, -1, 0));
+      
+      const groundHits = this.raycaster.intersectObjects(collidableObjects, false);
+      let groundY = 0; // Chão padrão
+
+      if (groundHits.length > 0) {
+        groundY = groundHits[0].point.y;
+      }
+
+      const targetEyeHeight = groundY + this.playerHeight;
+      const heightDiff = targetEyeHeight - this.camera.position.y;
+
+      // Se a diferença de altura for pequena (escadas e degraus), ajusta suavemente
+      if (heightDiff > 0 && heightDiff <= this.stepMaxHeight) {
+        this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 15 * delta);
+        this.velocity.y = 0;
+        this.canJump = true;
+      } else {
+        // Aplicação de Gravidade
+        this.velocity.y -= this.gravity * delta;
+        this.camera.position.y += this.velocity.y * delta;
+
+        // Tocou no chão/plataforma
+        if (this.camera.position.y <= targetEyeHeight) {
+          this.camera.position.y = targetEyeHeight;
+          this.velocity.y = 0;
+          this.canJump = true;
+        }
+      }
+    }
   }
 }
