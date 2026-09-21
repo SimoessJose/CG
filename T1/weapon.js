@@ -15,9 +15,8 @@ export function createWeapon(camera) {
   // Rotaciona o cilindro para deitá-lo e apontar para a frente (direção da mira)
   weaponMesh.rotation.x = Math.PI / 2;
   
-  // Posiciona a arma relativa à câmera:
-  // X positivo (direita), Y negativo (baixo), Z negativo (frente)
-  weaponMesh.position.set(0.4, -0.4, -1);
+  // X centralizado (0), Y negativo (baixo), Z negativo (frente)
+  weaponMesh.position.set(0, -0.35, -0.8);
   
   // O pulo do gato: adiciona a arma como filha da câmera
   camera.add(weaponMesh);

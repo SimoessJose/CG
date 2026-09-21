@@ -30,9 +30,14 @@ export class FPAAControls {
     this.playerRadius = 0.8; 
     this.stepMaxHeight = 0.8; // Permite absorver degraus e escadas suavemente
 
+    this.weaponMesh = null;
     this.raycaster = new THREE.Raycaster();
 
     this._initEvents();
+  }
+
+  setWeapon(weaponMesh) {
+    this.weaponMesh = weaponMesh;
   }
 
   _initEvents() {
@@ -43,12 +48,16 @@ export class FPAAControls {
     document.addEventListener('keydown', (event) => {
       if (event.key === 'c' || event.key === 'C') {
         this.isOrbitActive = !this.isOrbitActive;
+        const crosshair = document.getElementById('crosshair');
         
         if (this.isOrbitActive) {
           this.pointerControls.unlock();
           this.savedFPAAPosition.copy(this.camera.position);
           this.savedFPAARotation.copy(this.camera.rotation);
           
+          if (crosshair) crosshair.style.display = 'none';
+          if (this.weaponMesh) this.weaponMesh.visible = false;
+
           this.orbit.enabled = true;
           this.camera.position.set(0, 80, 180);
           this.orbit.target.set(0, 4, 0); 
@@ -57,6 +66,10 @@ export class FPAAControls {
           this.orbit.enabled = false;
           this.camera.position.copy(this.savedFPAAPosition);
           this.camera.rotation.copy(this.savedFPAARotation);
+          
+          if (crosshair) crosshair.style.display = 'block';
+          if (this.weaponMesh) this.weaponMesh.visible = true;
+
           this.pointerControls.lock();
         }
       }
@@ -114,22 +127,42 @@ export class FPAAControls {
         moveVector.normalize().multiplyScalar(this.speed * delta);
       }
 
-      // 2. Colisão Horizontal + Efeito de Deslize na Parede
+      // 2. Colisão Horizontal + Efeito de Deslize na Parede (Sliding)
       if (moveVector.lengthSq() > 0) {
-        const moveDir = moveVector.clone().normalize();
         const rayOrigin = this.camera.position.clone();
-        rayOrigin.y -= (this.playerHeight / 2);
+        rayOrigin.y -= 0.8; // Altura da cintura, acima de degraus
 
+        const moveDir = moveVector.clone().normalize();
         this.raycaster.set(rayOrigin, moveDir);
         const collisions = this.raycaster.intersectObjects(collidableObjects, false);
 
         if (collisions.length > 0 && collisions[0].distance < moveVector.length() + this.playerRadius) {
           const hit = collisions[0];
           const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+          normal.y = 0;
+          normal.normalize();
 
-          // Projeta o vetor de movimento no plano do obstáculo para deslizar
+          // Projeta o vetor de movimento no plano do obstáculo para deslizar sem travar
           const dot = moveVector.dot(normal);
-          moveVector.sub(normal.multiplyScalar(dot));
+          if (dot < 0) {
+            moveVector.sub(normal.clone().multiplyScalar(dot));
+          }
+
+          // Checagem secundária para cantos e esquinas
+          if (moveVector.lengthSq() > 0.0001) {
+            const slideDir = moveVector.clone().normalize();
+            this.raycaster.set(rayOrigin, slideDir);
+            const secondHits = this.raycaster.intersectObjects(collidableObjects, false);
+            if (secondHits.length > 0 && secondHits[0].distance < moveVector.length() + this.playerRadius) {
+              const normal2 = secondHits[0].face.normal.clone().transformDirection(secondHits[0].object.matrixWorld);
+              normal2.y = 0;
+              normal2.normalize();
+              const dot2 = moveVector.dot(normal2);
+              if (dot2 < 0) {
+                moveVector.sub(normal2.clone().multiplyScalar(dot2));
+              }
+            }
+          }
         }
       }
 
@@ -150,13 +183,29 @@ export class FPAAControls {
       const targetEyeHeight = groundY + this.playerHeight;
       const heightDiff = targetEyeHeight - this.camera.position.y;
 
-      // Subida de degraus/escadas (Efeito rampa)
-      if (heightDiff > 0 && heightDiff <= this.stepMaxHeight) {
+      // 1. Pulo ativo ou em fase aérea com velocidade vertical
+      if (!this.canJump || this.velocity.y > 0) {
+        this.velocity.y -= this.gravity * delta;
+        this.camera.position.y += this.velocity.y * delta;
+
+        // Aterrissagem no chão ou degrau
+        if (this.camera.position.y <= targetEyeHeight) {
+          this.camera.position.y = targetEyeHeight;
+          this.velocity.y = 0;
+          this.canJump = true;
+        }
+      } else if (heightDiff > 0 && heightDiff <= this.stepMaxHeight) {
+        // Subida suave de degraus/escadas (Efeito rampa)
+        this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 15 * delta);
+        this.velocity.y = 0;
+        this.canJump = true;
+      } else if (heightDiff < 0 && heightDiff >= -this.stepMaxHeight) {
+        // Descida suave de degraus/escadas (Efeito rampa ao caminhar)
         this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 15 * delta);
         this.velocity.y = 0;
         this.canJump = true;
       } else {
-        // Gravidade e queda interpolada
+        // Queda suave com gravidade (ao sair de blocos altos ou do muro)
         this.velocity.y -= this.gravity * delta;
         this.camera.position.y += this.velocity.y * delta;
 

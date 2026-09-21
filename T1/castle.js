@@ -148,19 +148,83 @@ export function createWalls(wallsGroup) {
   addBox([72, WALL_HEIGHT, WALL_THICKNESS], [-44, WALL_HEIGHT / 2, 80], materials.stone, 'south wall left', wallsGroup);
   addBox([72, WALL_HEIGHT, WALL_THICKNESS], [44, WALL_HEIGHT / 2, 80], materials.stone, 'south wall right', wallsGroup);
 
+  createWallWalkways(wallsGroup);
   createWallBattlements(wallsGroup);
+  createWallStairs(wallsGroup);
+  createDropPlatform(wallsGroup);
+}
+
+// Passadiço transitável no topo dos muros (Adarve)
+export function createWallWalkways(wallsGroup) {
+  // Passadiço Norte
+  addBox([140, 1, 6], [0, 17.5, -78], materials.stoneLight, 'north walkway', wallsGroup);
+  // Passadiço Oeste
+  addBox([6, 1, 140], [-78, 17.5, 0], materials.stoneLight, 'west walkway', wallsGroup);
+  // Passadiço Leste
+  addBox([6, 1, 140], [78, 17.5, 0], materials.stoneLight, 'east walkway', wallsGroup);
+  // Passadiços Sul
+  addBox([55, 1, 6], [-44, 17.5, 78], materials.stoneLight, 'south walkway left', wallsGroup);
+  addBox([55, 1, 6], [44, 17.5, 78], materials.stoneLight, 'south walkway right', wallsGroup);
+
+  // Guarda-corpo interno (proteção para não cair sem querer no pátio)
+  addBox([135, 1.2, 0.5], [0, 18.6, -75], materials.stoneDark, 'north inner parapet', wallsGroup);
+  addBox([55, 1.2, 0.5], [-44, 18.6, 75], materials.stoneDark, 'south inner parapet left', wallsGroup);
+  addBox([55, 1.2, 0.5], [44, 18.6, 75], materials.stoneDark, 'south inner parapet right', wallsGroup);
+  addBox([0.5, 1.2, 140], [75, 18.6, 0], materials.stoneDark, 'east inner parapet', wallsGroup);
+  // No oeste, guarda-corpo dividido para dar passagem à escada
+  addBox([0.5, 1.2, 50], [-75, 18.6, -40], materials.stoneDark, 'west inner parapet north', wallsGroup);
+  addBox([0.5, 1.2, 55], [-75, 18.6, 45], materials.stoneDark, 'west inner parapet south', wallsGroup);
 }
 
 export function createWallBattlements(wallsGroup) {
   const y = WALL_HEIGHT + 1;
-  const merlonSize = [3, 2, 3];
+  const merlonSizeX = [3, 2, 1.5];
+  const merlonSizeZ = [1.5, 2, 3];
 
   for (let coordinate = -77; coordinate <= 77; coordinate += 6) {
-    addBox(merlonSize, [coordinate, y, -80], materials.stone, 'north merlon', wallsGroup);
-    addBox(merlonSize, [-80, y, coordinate], materials.stone, 'west merlon', wallsGroup);
-    addBox(merlonSize, [coordinate, y, 80], materials.stone, 'south merlon', wallsGroup);
-    addBox(merlonSize, [80, y, coordinate], materials.stone, 'east merlon', wallsGroup);
+    // Pula a posição do local de queda para deixar abertura na muralha norte
+    if (coordinate >= -44 && coordinate <= -36) {
+      continue;
+    }
+    addBox(merlonSizeX, [coordinate, y, -82], materials.stone, 'north merlon', wallsGroup);
+    addBox(merlonSizeZ, [-82, y, coordinate], materials.stone, 'west merlon', wallsGroup);
+    addBox(merlonSizeX, [coordinate, y, 82], materials.stone, 'south merlon', wallsGroup);
+    addBox(merlonSizeZ, [82, y, coordinate], materials.stone, 'east merlon', wallsGroup);
   }
+}
+
+// Escada monumental para acessar os muros do castelo
+export function createWallStairs(wallsGroup) {
+  const stepHeight = 0.5;
+  const stepDepth = 1.0;
+  const stepWidth = 3.5;
+  const totalHeight = 18;
+  const numSteps = Math.ceil(totalHeight / stepHeight); // 36 degraus
+  const baseX = -73.5;
+  const baseZ = -22;
+
+  // Degraus da escada
+  for (let i = 0; i < numSteps; i += 1) {
+    const y = stepHeight / 2 + i * stepHeight;
+    const z = baseZ + i * stepDepth;
+    addBox([stepWidth, stepHeight, stepDepth], [baseX, y, z], materials.stoneDark, `wall stair step ${i + 1}`, wallsGroup);
+  }
+
+  
+}
+
+// Local nos muros por onde o usuário possa sair/cair (conforme exigido no PDF)
+export function createDropPlatform(wallsGroup) {
+  // Prancha de salto de madeira projetada para fora da muralha norte
+  addBox([5, 0.4, 7], [-40, 17.8, -83.5], materials.wood, 'drop platform', wallsGroup);
+  
+  // Laterais de proteção na prancha
+  addBox([0.3, 1.4, 6], [-42.3, 18.7, -83.5], materials.iron, 'drop rail left', wallsGroup);
+  addBox([0.3, 1.4, 6], [-37.7, 18.7, -83.5], materials.iron, 'drop rail right', wallsGroup);
+
+  // Sinalizadores visuais (postes de tocha/marcação de salto)
+  addBox([0.4, 2.5, 0.4], [-42.3, 19.2, -86.5], materials.wood, 'drop marker post L', wallsGroup);
+  addBox([0.4, 2.5, 0.4], [-37.7, 19.2, -86.5], materials.wood, 'drop marker post R', wallsGroup);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,9 +245,11 @@ export function createTowers(towersGroup) {
     }
   });
 
-  addBox([10, 30, 10], [81, 10, 0], materials.stoneDark, 'east mid tower', towersGroup);
-  addBox([10, 30, 10], [-81, 10, 0], materials.stoneDark, 'west mid tower', towersGroup);
-  addBox([10, 30, 10], [0, 10, -81], materials.stoneDark, 'north postern tower', towersGroup);
+  // Torres intermediárias projetadas para a parte externa (em direção ao fosso),
+  // sem invadir o pátio interno nem obstruir a escada dos muros
+  addBox([10, 30, 10], [85, 15, 0], materials.stoneDark, 'east mid tower', towersGroup);
+  addBox([10, 30, 10], [-85, 15, 0], materials.stoneDark, 'west mid tower', towersGroup);
+  addBox([10, 30, 10], [0, 15, -85], materials.stoneDark, 'north postern tower', towersGroup);
 }
 
 // ---------------------------------------------------------------------------
