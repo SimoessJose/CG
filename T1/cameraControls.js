@@ -4,6 +4,7 @@ import { PointerLockControls } from '../build/jsm/controls/PointerLockControls.j
 import { collidableObjects } from './gameState.js';
 
 export class FPAAControls {
+  // Configura o estado inicial do Jogador
   constructor(camera, domElement) {
     this.camera = camera;
     this.domElement = domElement;
@@ -22,6 +23,7 @@ export class FPAAControls {
     this.velocity = new THREE.Vector3();
     this.clock = new THREE.Clock();
     
+    // Fisica e Medidas do jogo
     this.speed = 22.0;
     this.jumpForce = 12.0;
     this.gravity = 35.0;
@@ -30,12 +32,15 @@ export class FPAAControls {
     this.playerRadius = 0.8; 
     this.stepMaxHeight = 0.8; // Permite absorver degraus e escadas suavemente
 
+    //Inicia o weaponMesh vazio
     this.weaponMesh = null;
+    //Instancia Raycaster - Vai ser usado para calcular as colisões
     this.raycaster = new THREE.Raycaster();
 
     this._initEvents();
   }
 
+  //Metodo para receber o objeto 
   setWeapon(weaponMesh) {
     this.weaponMesh = weaponMesh;
   }
@@ -46,27 +51,39 @@ export class FPAAControls {
     });
 
     document.addEventListener('keydown', (event) => {
+      
+      // Caso a gente aperte a Tecla C, ira responder de acordo com o
+      // modo em que a camera esta atualmente
       if (event.key === 'c' || event.key === 'C') {
         this.isOrbitActive = !this.isOrbitActive;
         const crosshair = document.getElementById('crosshair');
         
+
+        // Se estiver em Órbita, volta para a posição que estava antes
+        // de entrar em órbita
         if (this.isOrbitActive) {
+
+          //Libera pointerControls e salva posição em que a FPAA Camera estava
           this.pointerControls.unlock();
           this.savedFPAAPosition.copy(this.camera.position);
           this.savedFPAARotation.copy(this.camera.rotation);
           
+          // Esconde a mira e a arma
           if (crosshair) crosshair.style.display = 'none';
           if (this.weaponMesh) this.weaponMesh.visible = false;
 
+          // Libera orbita
           this.orbit.enabled = true;
           this.camera.position.set(0, 80, 180);
           this.orbit.target.set(0, 4, 0); 
           this.orbit.update();
         } else {
+          //Volta para a posição base da FPAA, salva a posição da camera Orbital
           this.orbit.enabled = false;
           this.camera.position.copy(this.savedFPAAPosition);
           this.camera.rotation.copy(this.savedFPAARotation);
-          
+        
+          //Volta com a camera para a tela
           if (crosshair) crosshair.style.display = 'block';
           if (this.weaponMesh) this.weaponMesh.visible = true;
 
@@ -93,6 +110,7 @@ export class FPAAControls {
     document.addEventListener('keyup', (event) => {
       if (!this.isOrbitActive) {
         switch (event.code) {
+          // Desabilita movimento quando se solta tecla (keyup)
           case 'ArrowUp': case 'KeyW': this.moveState.forward = false; break;
           case 'ArrowLeft': case 'KeyA': this.moveState.left = false; break;
           case 'ArrowDown': case 'KeyS': this.moveState.backward = false; break;
@@ -102,12 +120,13 @@ export class FPAAControls {
     });
   }
 
+  // Função Update - Roda o tempo todo
   update() {
     const delta = this.clock.getDelta();
     if (delta > 0.1) return;
 
     if (this.pointerControls.isLocked && !this.isOrbitActive) {
-      // 1. Vetor de Direção de Movimento
+      // Vetor de Direção de Movimento
       const moveVector = new THREE.Vector3();
       
       const forwardDir = new THREE.Vector3();
