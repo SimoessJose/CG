@@ -154,15 +154,11 @@ export function createWalls(wallsGroup) {
   createDropPlatform(wallsGroup);
 }
 
-// Passadiço transitável no topo dos muros (Adarve)
 export function createWallWalkways(wallsGroup) {
-  // Passadiço Norte
+  
   addBox([140, 1, 6], [0, 17.5, -78], materials.stoneLight, 'north walkway', wallsGroup);
-  // Passadiço Oeste
   addBox([6, 1, 140], [-78, 17.5, 0], materials.stoneLight, 'west walkway', wallsGroup);
-  // Passadiço Leste
   addBox([6, 1, 140], [78, 17.5, 0], materials.stoneLight, 'east walkway', wallsGroup);
-  // Passadiços Sul
   addBox([55, 1, 6], [-44, 17.5, 78], materials.stoneLight, 'south walkway left', wallsGroup);
   addBox([55, 1, 6], [44, 17.5, 78], materials.stoneLight, 'south walkway right', wallsGroup);
 
@@ -213,7 +209,7 @@ export function createWallStairs(wallsGroup) {
   
 }
 
-// Local nos muros por onde o usuário possa sair/cair (conforme exigido no PDF)
+// Local nos muros por onde o usuário possa sair/cair
 export function createDropPlatform(wallsGroup) {
   // Prancha de salto de madeira projetada para fora da muralha norte
   addBox([5, 0.4, 7], [-40, 17.8, -83.5], materials.wood, 'drop platform', wallsGroup);
@@ -222,7 +218,7 @@ export function createDropPlatform(wallsGroup) {
   addBox([0.3, 1.4, 6], [-42.3, 18.7, -83.5], materials.iron, 'drop rail left', wallsGroup);
   addBox([0.3, 1.4, 6], [-37.7, 18.7, -83.5], materials.iron, 'drop rail right', wallsGroup);
 
-  // Sinalizadores visuais (postes de tocha/marcação de salto)
+  // Sinalizadores visuais 
   addBox([0.4, 2.5, 0.4], [-42.3, 19.2, -86.5], materials.wood, 'drop marker post L', wallsGroup);
   addBox([0.4, 2.5, 0.4], [-37.7, 19.2, -86.5], materials.wood, 'drop marker post R', wallsGroup);
 }

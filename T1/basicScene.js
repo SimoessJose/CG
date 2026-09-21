@@ -24,7 +24,7 @@ const camera = initCamera(new THREE.Vector3(0, 15, 150));
 scene.add(camera);
 
 // ============================================================================
-// ILUMINAÇÃO (Utilizando initDefaultBasicLight conforme especificado no PDF)
+// ILUMINAÇÃO 
 // ============================================================================
 scene.background = new THREE.Color(0x87CEEB); // Céu azul
 initDefaultBasicLight(scene, false, new THREE.Vector3(150, 250, 100));
