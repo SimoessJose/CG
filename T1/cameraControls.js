@@ -91,6 +91,7 @@ export class FPAAControls {
         }
       }
 
+      // Controle camera FPAA
       if (!this.isOrbitActive) {
         switch (event.code) {
           case 'ArrowUp': case 'KeyW': this.moveState.forward = true; break;
@@ -100,6 +101,7 @@ export class FPAAControls {
           case 'Space': 
             if (this.canJump) {
               this.velocity.y = this.jumpForce;
+              //Não se pode pular no AR
               this.canJump = false;
             }
             break;
