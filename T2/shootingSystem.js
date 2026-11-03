@@ -109,8 +109,8 @@ export class ShootingSystem {
         }
       }
 
-      // Limites de distância e nível da água (y <= 0)
-      if (collided || p.position.y <= 0 || p.userData.distanceTraveled >= this.maxDistance) {
+      // Limites de distância e nível da água (y <= -2.0)
+      if (collided || p.position.y <= -2.0 || p.userData.distanceTraveled >= this.maxDistance) {
         this.scene.remove(p);
         this.projectiles.splice(i, 1);
         continue;

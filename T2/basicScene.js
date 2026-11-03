@@ -28,7 +28,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // Câmera posicionada na ponte de entrada do castelo, voltada para o pórtico principal
-const camera = initCamera(new THREE.Vector3(0, 4.0, 155));
+const camera = initCamera(new THREE.Vector3(0, 2.2, 155));
 scene.add(camera);
 
 // ============================================================================

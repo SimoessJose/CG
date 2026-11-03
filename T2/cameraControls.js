@@ -240,9 +240,19 @@ export class FPAAControls {
         this.raycaster.set(rayOrigin, moveDir);
         const collisions = this.raycaster.intersectObjects(collidableObjects, false);
 
-        if (collisions.length > 0 && collisions[0].distance < moveVector.length() + this.playerRadius) {
-          const hit = collisions[0];
-          const normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+        // Filtra para encontrar colisão com obstáculo vertical / parede (ignora rampas e declives caminháveis onde normal.y > 0.5)
+        let wallHit = null;
+        for (const hit of collisions) {
+          if (hit.distance >= moveVector.length() + this.playerRadius) break;
+          const worldNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+          if (worldNormal.y <= 0.5) {
+            wallHit = { hit, worldNormal };
+            break;
+          }
+        }
+
+        if (wallHit) {
+          const normal = wallHit.worldNormal.clone();
           normal.y = 0;
           normal.normalize();
 
@@ -257,8 +267,19 @@ export class FPAAControls {
             const slideDir = moveVector.clone().normalize();
             this.raycaster.set(rayOrigin, slideDir);
             const secondHits = this.raycaster.intersectObjects(collidableObjects, false);
-            if (secondHits.length > 0 && secondHits[0].distance < moveVector.length() + this.playerRadius) {
-              const normal2 = secondHits[0].face.normal.clone().transformDirection(secondHits[0].object.matrixWorld);
+
+            let secondWallHit = null;
+            for (const hit2 of secondHits) {
+              if (hit2.distance >= moveVector.length() + this.playerRadius) break;
+              const worldNormal2 = hit2.face.normal.clone().transformDirection(hit2.object.matrixWorld);
+              if (worldNormal2.y <= 0.5) {
+                secondWallHit = { hit: hit2, worldNormal: worldNormal2 };
+                break;
+              }
+            }
+
+            if (secondWallHit) {
+              const normal2 = secondWallHit.worldNormal.clone();
               normal2.y = 0;
               normal2.normalize();
               const dot2 = moveVector.dot(normal2);
@@ -298,18 +319,14 @@ export class FPAAControls {
           this.velocity.y = 0;
           this.canJump = true;
         }
-      } else if (heightDiff > 0 && heightDiff <= this.stepMaxHeight) {
-        // Subida suave de degraus de escada (efeito rampa de absorção)
-        this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 18 * delta);
-        this.velocity.y = 0;
-        this.canJump = true;
-      } else if (heightDiff < 0 && heightDiff >= -this.stepMaxHeight) {
-        // Descida suave de degraus de escada
-        this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetEyeHeight, 18 * delta);
+      } else if (Math.abs(heightDiff) <= 1.2) {
+        // Movimentação perfeitamente linear e contínua sobre rampas e escadas
+        // (como se estivesse subindo uma rampa, sem oscilação, atraso de lerp ou solavancos)
+        this.camera.position.y = targetEyeHeight;
         this.velocity.y = 0;
         this.canJump = true;
       } else {
-        // Queda suave com gravidade ao saltar de plataformas ou muros
+        // Queda com gravidade ao saltar de plataformas ou muros altos
         this.velocity.y -= this.gravity * delta;
         this.camera.position.y += this.velocity.y * delta;
 

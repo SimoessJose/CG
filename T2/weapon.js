@@ -3,6 +3,25 @@ import { materials } from './materials.js';
 
 let crossbowGroup = null;
 let loadedBoltMesh = null;
+let stringMeshL = null;
+let stringMeshR = null;
+
+const bowTipL = new THREE.Vector3(-0.39, 0.055, -0.23);
+const bowTipR = new THREE.Vector3(0.39, 0.055, -0.23);
+const stringCockedPos = new THREE.Vector3(0.0, 0.058, 0.08);
+const stringFiredPos = new THREE.Vector3(0.0, 0.055, -0.23);
+
+/**
+ * Orienta e escala dinamicamente um segmento de cilindro unitário entre dois pontos 3D
+ */
+function orientStringSegment(mesh, pStart, pEnd) {
+  const dir = new THREE.Vector3().subVectors(pEnd, pStart);
+  const len = dir.length();
+  mesh.scale.set(1, len, 1);
+  mesh.position.copy(pStart).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+}
+
 let weaponRestPos = new THREE.Vector3(0.24, -0.32, -0.62);
 let weaponRestRot = new THREE.Euler(-0.06, 0.06, -0.04);
 let currentRecoil = 0;
@@ -51,10 +70,10 @@ export function createWeapon(camera) {
   crossbowGroup.add(triggerMesh);
 
   // 2. ARCO FRONTAL DE AÇO (Prod / Limbs)
-  // Braçadeira de ferro frontal que prende o arco à coronha
-  const bracketGeom = new THREE.BoxGeometry(0.12, 0.11, 0.06);
+  // Braçadeira de ferro frontal que prende o arco à coronha (nivelada com o trilho a y = 0.045)
+  const bracketGeom = new THREE.BoxGeometry(0.12, 0.09, 0.06);
   const bracketMesh = new THREE.Mesh(bracketGeom, materials.iron);
-  bracketMesh.position.set(0, 0.005, -0.32);
+  bracketMesh.position.set(0, 0.045, -0.32);
   bracketMesh.castShadow = true;
   crossbowGroup.add(bracketMesh);
 
@@ -63,57 +82,56 @@ export function createWeapon(camera) {
   const stirrupMesh = new THREE.Mesh(stirrupGeom, materials.iron);
   stirrupMesh.rotation.x = Math.PI / 2;
   stirrupMesh.rotation.z = Math.PI / 4;
-  stirrupMesh.position.set(0, 0, -0.42);
+  stirrupMesh.position.set(0, 0.045, -0.42);
   stirrupMesh.castShadow = true;
   crossbowGroup.add(stirrupMesh);
 
-  // Braços do arco curvados em aço (Lado Esquerdo e Direito)
+  // Braços do arco curvados em aço (Lado Esquerdo e Direito) perfeitamente alinhados ao plano do trilho
   const armGeom = new THREE.BoxGeometry(0.32, 0.035, 0.02);
   
   // Braço Esquerdo
   const leftArm = new THREE.Mesh(armGeom, materials.steel);
-  leftArm.position.set(-0.16, 0.01, -0.32);
+  leftArm.position.set(-0.16, 0.045, -0.32);
   leftArm.rotation.y = THREE.MathUtils.degToRad(16);
   leftArm.castShadow = true;
   crossbowGroup.add(leftArm);
 
   // Ponta do Braço Esquerdo (nock)
   const leftTip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.028, 0.018), materials.steel);
-  leftTip.position.set(-0.35, 0.01, -0.27);
+  leftTip.position.set(-0.35, 0.045, -0.27);
   leftTip.rotation.y = THREE.MathUtils.degToRad(42);
   leftTip.castShadow = true;
   crossbowGroup.add(leftTip);
 
   // Braço Direito
   const rightArm = new THREE.Mesh(armGeom, materials.steel);
-  rightArm.position.set(0.16, 0.01, -0.32);
+  rightArm.position.set(0.16, 0.045, -0.32);
   rightArm.rotation.y = THREE.MathUtils.degToRad(-16);
   rightArm.castShadow = true;
   crossbowGroup.add(rightArm);
 
   // Ponta do Braço Direito (nock)
   const rightTip = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.028, 0.018), materials.steel);
-  rightTip.position.set(0.35, 0.01, -0.27);
+  rightTip.position.set(0.35, 0.045, -0.27);
   rightTip.rotation.y = THREE.MathUtils.degToRad(-42);
   rightTip.castShadow = true;
   crossbowGroup.add(rightTip);
 
-  // 3. CORDA DA BESTA (Bowstring esticada)
-  // Corda esticada da ponta esquerda até a noz central e até a ponta direita
-  const stringMat = new THREE.MeshLambertMaterial({ color: 0xdedede });
-  const stringGeomL = new THREE.CylinderGeometry(0.005, 0.005, 0.44, 6);
-  const stringL = new THREE.Mesh(stringGeomL, stringMat);
-  stringL.position.set(-0.2, 0.015, -0.16);
-  stringL.rotation.z = THREE.MathUtils.degToRad(68);
-  stringL.rotation.y = THREE.MathUtils.degToRad(22);
-  crossbowGroup.add(stringL);
+  // 3. CORDA DA BESTA (Bowstring esticada e alinhada rigorosamente ao eixo horizontal do trilho)
+  // A corda conecta as pontas do arco de aço até a noz central de disparo (atrás do dardo)
+  const stringGeom = new THREE.CylinderGeometry(0.0035, 0.0035, 1.0, 8);
+  const stringMat = new THREE.MeshLambertMaterial({ color: 0xefefef });
 
-  const stringGeomR = new THREE.CylinderGeometry(0.005, 0.005, 0.44, 6);
-  const stringR = new THREE.Mesh(stringGeomR, stringMat);
-  stringR.position.set(0.2, 0.015, -0.16);
-  stringR.rotation.z = THREE.MathUtils.degToRad(-68);
-  stringR.rotation.y = THREE.MathUtils.degToRad(-22);
-  crossbowGroup.add(stringR);
+  stringMeshL = new THREE.Mesh(stringGeom, stringMat);
+  stringMeshL.castShadow = true;
+  crossbowGroup.add(stringMeshL);
+
+  stringMeshR = new THREE.Mesh(stringGeom, stringMat);
+  stringMeshR.castShadow = true;
+  crossbowGroup.add(stringMeshR);
+
+  orientStringSegment(stringMeshL, bowTipL, stringCockedPos);
+  orientStringSegment(stringMeshR, bowTipR, stringCockedPos);
 
   // Mola de retenção do dardo (clip superior)
   const springGeom = new THREE.BoxGeometry(0.015, 0.008, 0.16);
@@ -221,5 +239,22 @@ export function updateWeaponAnimation(delta, reloadRatio) {
   // Recarga: o dardo reaparece na besta quando a recarga passa de 45%
   if (reloadRatio > 0.45) {
     setLoadedBoltVisible(true);
+  }
+
+  // Dinâmica da corda: quando disparada, a corda projeta-se à frente com o dardo,
+  // e é tracionada de volta até a noz durante o ciclo de recarga
+  if (stringMeshL && stringMeshR) {
+    let t = 1.0;
+    if (reloadRatio < 0.15) {
+      t = 0.0;
+    } else if (reloadRatio < 0.95) {
+      t = (reloadRatio - 0.15) / 0.80;
+    }
+    const curZ = THREE.MathUtils.lerp(stringFiredPos.z, stringCockedPos.z, t);
+    const curY = THREE.MathUtils.lerp(stringFiredPos.y, stringCockedPos.y, t);
+    const curCenter = new THREE.Vector3(0, curY, curZ);
+
+    orientStringSegment(stringMeshL, bowTipL, curCenter);
+    orientStringSegment(stringMeshR, bowTipR, curCenter);
   }
 }

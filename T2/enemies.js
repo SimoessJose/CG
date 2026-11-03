@@ -20,27 +20,28 @@ export function initEnemies(scene) {
     prepareModelMaterials(baseGhost);
 
     // Inimigo 1: Fantasma na parte 'caminhável' de um dos muros (Muralha Norte)
+    // Posicionado no centro do passadiço norte (y=18.0), flutuando a y=19.5 em área livre
     createEnemyInstance({
       type: 'ghost',
       name: 'Fantasma dos Muros',
       modelTemplate: baseGhost,
-      position: new THREE.Vector3(25, 18.2, -78),
-      scale: 1.4,
+      position: new THREE.Vector3(15, 19.5, -78),
+      scale: 2.2,
       maxHP: 3,                 // "um tipo de inimigo morra ao receber 3 disparos"
-      lightColor: 0x9d4edd,     // Luz pontual violeta/ciano identificável
+      lightColor: 0xd084ff,     // Luz pontual violeta identificável
       hoverHeight: 0.45,
       hoverSpeed: 2.5
     });
 
-    // Inimigo 2: Fantasma no pátio interno / ruínas leste
+    // Inimigo 2: Fantasma no pátio interno (área aberta da grama, fora de blocos de ruínas)
     createEnemyInstance({
       type: 'ghost',
       name: 'Fantasma das Ruínas',
       modelTemplate: baseGhost,
-      position: new THREE.Vector3(55, 3.5, -45),
-      scale: 1.4,
+      position: new THREE.Vector3(35, 2.0, -45),
+      scale: 2.2,
       maxHP: 3,
-      lightColor: 0x9d4edd,
+      lightColor: 0xd084ff,
       hoverHeight: 0.45,
       hoverSpeed: 2.2
     });
@@ -51,26 +52,27 @@ export function initEnemies(scene) {
     const baseSlime = gltf.scene;
     prepareModelMaterials(baseSlime);
 
-    // Inimigo 3: Slime DENTRO de uma das edificações internas (Prédio Oeste)
+    // Inimigo 3: Slime DENTRO da edificação interna oeste
+    // Posicionado no centro do salão térreo no piso de madeira (y=0.20)
     createEnemyInstance({
       type: 'slime',
       name: 'Slime do Santuário Interior',
       modelTemplate: baseSlime,
-      position: new THREE.Vector3(-40, 1.0, -35),
-      scale: 1.5,
+      position: new THREE.Vector3(-40, 0.20, -34),
+      scale: 1.8,
       maxHP: 5,                 // "o outro tipo, com 5"
       lightColor: 0x2ecc71,     // Luz pontual verde esmeralda identificável
       hoverHeight: 0.0,
       hoverSpeed: 4.5
     });
 
-    // Inimigo 4: Slime no pátio interno / perto do caminho principal
+    // Inimigo 4: Slime no pátio interno sul (área aberta da grama, totalmente desobstruído)
     createEnemyInstance({
       type: 'slime',
       name: 'Slime do Pátio',
       modelTemplate: baseSlime,
-      position: new THREE.Vector3(-38, 1.0, 42),
-      scale: 1.5,
+      position: new THREE.Vector3(-25, 0.10, 30),
+      scale: 1.8,
       maxHP: 5,
       lightColor: 0x2ecc71,
       hoverHeight: 0.0,
@@ -80,7 +82,7 @@ export function initEnemies(scene) {
 }
 
 /**
- * Converte todos os materiais do modelo importado para MeshLambertMaterial
+ * Converte todos os materiais do modelo importado para MeshLambertMaterial com textura e face dupla,
  * conforme a exigência estrita: "Todos os objetos, exceto as chaves, devem possuir LambertMaterial"
  */
 function prepareModelMaterials(object3d) {
@@ -90,14 +92,27 @@ function prepareModelMaterials(object3d) {
       child.receiveShadow = true;
 
       const oldMat = child.material;
-      child.material = new THREE.MeshLambertMaterial({
-        color: oldMat && oldMat.color ? oldMat.color.clone() : new THREE.Color(0xffffff),
-        map: oldMat && oldMat.map ? oldMat.map : null,
-        transparent: true,
-        opacity: 1.0
-      });
+      if (Array.isArray(oldMat)) {
+        child.material = oldMat.map(m => convertMaterialToLambert(m));
+      } else if (oldMat) {
+        child.material = convertMaterialToLambert(oldMat);
+      }
     }
   });
+}
+
+function convertMaterialToLambert(oldMat) {
+  const lambertMat = new THREE.MeshLambertMaterial({
+    color: oldMat && oldMat.color ? oldMat.color.clone() : new THREE.Color(0xffffff),
+    map: oldMat && oldMat.map ? oldMat.map : null,
+    transparent: true,
+    opacity: 1.0,
+    side: THREE.DoubleSide
+  });
+  if (lambertMat.map) {
+    lambertMat.map.needsUpdate = true;
+  }
+  return lambertMat;
 }
 
 /**
@@ -108,7 +123,7 @@ function createEnemyInstance(config) {
   group.position.copy(config.position);
   group.name = config.name;
 
-  // Clona o modelo geométrico
+  // Clona o modelo geométrico com escala proporcional adequada
   const model = config.modelTemplate.clone(true);
   model.scale.setScalar(config.scale);
   group.add(model);
@@ -116,26 +131,33 @@ function createEnemyInstance(config) {
   // Clona os materiais para garantir controle independente de opacidade na morte
   model.traverse((child) => {
     if (child.isMesh && child.material) {
-      child.material = child.material.clone();
+      if (Array.isArray(child.material)) {
+        child.material = child.material.map(m => m.clone());
+      } else {
+        child.material = child.material.clone();
+      }
     }
   });
 
   // Luz pontual de baixa intensidade identificável
-  const pointLight = new THREE.PointLight(config.lightColor, 1.25, 15);
-  pointLight.position.set(0, 1.5, 0);
-  pointLight.castShadow = false; // Leveza de desempenho
+  const pointLight = new THREE.PointLight(config.lightColor, 1.4, 16);
+  pointLight.position.set(0, 1.2, 0);
+  pointLight.castShadow = false;
   group.add(pointLight);
 
-  // Barra de Vida 3D Billboard suspensa sobre o inimigo
+  // Barra de Vida 3D Billboard suspensa proporcionalmente logo acima da cabeça do monstro
   const healthBar = createHealthBar(config.maxHP);
-  healthBar.group.position.set(0, 2.6, 0);
+  const barY = config.type === 'ghost' ? 1.6 : 1.85;
+  healthBar.group.position.set(0, barY, 0);
   group.add(healthBar.group);
 
-  // Malha de colisão invisível (bounding box/cilindro) para receber tiros
-  const hitBoxGeom = new THREE.CylinderGeometry(1.2, 1.2, 2.5, 8);
+  // Malha de colisão invisível (hitbox) perfeitamente alinhada com o modelo para receber tiros
+  const hitBoxRadius = config.type === 'ghost' ? 1.0 : 1.2;
+  const hitBoxHeight = 1.8;
+  const hitBoxGeom = new THREE.CylinderGeometry(hitBoxRadius, hitBoxRadius, hitBoxHeight, 8);
   const hitBoxMat = new THREE.MeshBasicMaterial({ visible: false });
   const collisionMesh = new THREE.Mesh(hitBoxGeom, hitBoxMat);
-  collisionMesh.position.set(0, 1.25, 0);
+  collisionMesh.position.set(0, hitBoxHeight / 2, 0);
   group.add(collisionMesh);
 
   const enemyObj = {
@@ -147,6 +169,7 @@ function createEnemyInstance(config) {
     healthBar,
     collisionMesh,
     basePosition: config.position.clone(),
+    baseScale: config.scale,
     maxHP: config.maxHP,
     currentHP: config.maxHP,
     isAlive: true,
@@ -161,7 +184,7 @@ function createEnemyInstance(config) {
       this.currentHP = Math.max(0, this.currentHP - amount);
       this.healthBar.update(this.currentHP, this.maxHP);
 
-      // Flash visual de impacto
+      // Flash visual de impacto em vermelho
       this.flashHit();
 
       if (this.currentHP === 0) {
@@ -172,11 +195,14 @@ function createEnemyInstance(config) {
     flashHit() {
       model.traverse((child) => {
         if (child.isMesh && child.material) {
-          const origColor = child.material.color.clone();
-          child.material.color.setHex(0xff3333);
-          setTimeout(() => {
-            if (child.material) child.material.color.copy(origColor);
-          }, 120);
+          const matList = Array.isArray(child.material) ? child.material : [child.material];
+          matList.forEach(mat => {
+            const origColor = mat.color.clone();
+            mat.color.setHex(0xff3333);
+            setTimeout(() => {
+              if (mat) mat.color.copy(origColor);
+            }, 120);
+          });
         }
       });
     },
@@ -192,7 +218,7 @@ function createEnemyInstance(config) {
 
   // Inimigos só começam visíveis se estiver no turno noturno
   group.visible = !gameState.isDayMode;
-  pointLight.intensity = gameState.isDayMode ? 0 : 1.25;
+  pointLight.intensity = gameState.isDayMode ? 0 : 1.4;
 
   sceneRef.add(group);
   activeEnemies.push(enemyObj);
@@ -258,7 +284,7 @@ export function setEnemiesActive(isActive) {
   for (const enemy of activeEnemies) {
     if (enemy.isAlive) {
       enemy.group.visible = isActive;
-      enemy.pointLight.intensity = isActive ? 1.25 : 0.0;
+      enemy.pointLight.intensity = isActive ? 1.4 : 0.0;
     }
   }
 }
@@ -307,11 +333,14 @@ export function updateEnemies(delta, camera, playerPos) {
     // Se estiver morrendo: transição suave de opacidade até sumir completamente
     if (enemy.isDying) {
       enemy.opacity -= delta * 0.85; // Desvanece em ~1.2 segundos
-      enemy.pointLight.intensity = Math.max(0, enemy.opacity * 1.25);
+      enemy.pointLight.intensity = Math.max(0, enemy.opacity * 1.4);
 
       enemy.model.traverse((child) => {
         if (child.isMesh && child.material) {
-          child.material.opacity = Math.max(0, enemy.opacity);
+          const matList = Array.isArray(child.material) ? child.material : [child.material];
+          matList.forEach(m => {
+            m.opacity = Math.max(0, enemy.opacity);
+          });
         }
       });
 
@@ -332,9 +361,9 @@ export function updateEnemies(delta, camera, playerPos) {
       } else if (enemy.type === 'slime') {
         // Slime: rasteja no chão com efeito elástico squash and stretch
         const squish = Math.sin(time * enemy.hoverSpeed);
-        enemy.model.scale.y = 1.5 + squish * 0.22;
-        enemy.model.scale.x = 1.5 - squish * 0.12;
-        enemy.model.scale.z = 1.5 - squish * 0.12;
+        enemy.model.scale.y = enemy.baseScale + squish * 0.22;
+        enemy.model.scale.x = enemy.baseScale - squish * 0.12;
+        enemy.model.scale.z = enemy.baseScale - squish * 0.12;
       }
 
       // Billboard da barra de vida: sempre voltada para a câmera

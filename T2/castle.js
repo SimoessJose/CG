@@ -88,42 +88,103 @@ export function createDoorWithPivot(position, size, name, group) {
 
 export function createStaircase(baseX, baseZ, direction, totalHeight, group, name = 'stair') {
   const stepHeight = 0.5;
-  const stepDepth = 1.1;
+  const stepDepth = 1.0;
   const stepWidth = 4.0;
   const numSteps = Math.ceil(totalHeight / stepHeight);
 
+  // Degraus visuais (sem colisão individual para evitar solavancos / travamentos)
   for (let i = 0; i < numSteps; i += 1) {
     const y = stepHeight / 2 + i * stepHeight;
     const z = baseZ + direction * i * stepDepth;
-    addBox([stepWidth, stepHeight, stepDepth], [baseX, y, z], materials.stoneDark, `${name} step ${i + 1}`, group);
+    addBox([stepWidth, stepHeight, stepDepth], [baseX, y, z], materials.stoneDark, `${name} step ${i + 1}`, group, false);
   }
+
+  // Rampa de colisão matemática perfeitamente linear (elimina qualquer efeito de subida e descida)
+  const run = numSteps * stepDepth;
+  const length = Math.sqrt(run * run + totalHeight * totalHeight);
+  const angle = Math.atan2(totalHeight, run);
+
+  const rampZ = baseZ + direction * (run / 2 - 0.5);
+  const rampY = totalHeight / 2;
+  const rampGeom = new THREE.BoxGeometry(stepWidth, 0.2, length);
+  const rampMat = new THREE.MeshBasicMaterial({ visible: false });
+  const rampMesh = new THREE.Mesh(rampGeom, rampMat);
+  rampMesh.position.set(baseX, rampY, rampZ);
+  rampMesh.rotation.x = -angle * direction;
+  group.add(rampMesh);
+  collidableObjects.push(rampMesh);
+}
+
+// ---------------------------------------------------------------------------
+// FUNÇÕES AUXILIARES CSG PARA CORTES EM ARCO E SETEIRAS
+// ---------------------------------------------------------------------------
+/**
+ * Cria a geometria CSG de corte em arco (parte inferior retangular plana e superior arredondada)
+ * transformada diretamente para a posição e rotação especificadas no espaço global 3D.
+ */
+function createArchCutterCSG(posX, posY, posZ, rotY = 0, width = 3.6, height = 5.2, depth = 8.0) {
+  const boxH = Math.max(0.1, height - width / 2);
+  const radius = width / 2;
+
+  // Grupo-pai que carrega a rotação e a posição globais
+  const base = new THREE.Matrix4()
+    .makeRotationY(rotY)
+    .setPosition(posX, posY, posZ);
+
+  // Parte retangular (inferior plana)
+  const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(width, boxH, depth));
+  boxMesh.matrixAutoUpdate = false;
+  boxMesh.matrix.copy(base).multiply(
+    new THREE.Matrix4().makeTranslation(0, boxH / 2, 0)
+  );
+
+  // Parte arredondada (superior)
+  const archMesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, depth, 16));
+  archMesh.matrixAutoUpdate = false;
+  archMesh.matrix.copy(base).multiply(
+    new THREE.Matrix4()
+      .makeTranslation(0, boxH, 0)
+      .multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
+  );
+
+  return CSG.fromMesh(boxMesh).union(CSG.fromMesh(archMesh));
+}
+
+/**
+ * Cria a geometria de corte para uma Seteira medieval com parte inferior plana e superior arredondada
+ */
+function createSeteiraCutterCSG(posX, posY, posZ, rotY = 0, width = 1.0, height = 3.2, depth = 8.0) {
+  return createArchCutterCSG(posX, posY, posZ, rotY, width, height, depth);
 }
 
 // ---------------------------------------------------------------------------
 // ITEM: Ponte da Parte Externa (Ambiente - 2 pontos)
-// Castelo e acesso mais altos que a água (plano base), cores areia e verde,
+// Castelo e acesso mais altos que a água (plano base a y = -2.0), cores areia e verde,
 // com alturas diferentes para evitar Z-fighting
 // ---------------------------------------------------------------------------
 export function createGroundAndBridge(scene) {
   const envGroup = new THREE.Group();
   envGroup.name = 'EnvironmentAndBridge';
 
-  // 1. Plano de água base do fosso a y = 0.0 (plano base)
+  // 1. Plano de água base do fosso a y = -2.0 (plano base)
   const waterPlane = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), materials.water);
   waterPlane.rotation.x = -Math.PI / 2;
-  waterPlane.position.y = 0.0;
+  waterPlane.position.y = -2.0;
   waterPlane.receiveShadow = true;
   envGroup.add(waterPlane);
+  collidableObjects.push(waterPlane);
 
   // Fundo escuro do fosso sob a água
   const bedPlane = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshLambertMaterial({ color: 0x18241c }));
   bedPlane.rotation.x = -Math.PI / 2;
-  bedPlane.position.y = -0.6;
+  bedPlane.position.y = -2.6;
   envGroup.add(bedPlane);
 
-  // 2. Ilha elevada do Castelo (mais alta que o plano base de água: base a y = 1.6, topo a y = 1.8)
-  const castleIsland = new THREE.Mesh(new THREE.BoxGeometry(184, 1.8, 184), materials.stoneLight);
-  castleIsland.position.set(0, 0.9, 0);
+  // 2. Ilha elevada do Castelo (mais alta que o plano base de água: base a y = -2.0, topo a y = 0.0)
+  // Dimensão 160x160 para coincidir perfeitamente com a fundação das muralhas e pátio,
+  // permitindo que as muralhas e torres mergulhem diretamente no fosso de água (como no modelo base)
+  const castleIsland = new THREE.Mesh(new THREE.BoxGeometry(160, 2.0, 160), materials.stoneLight);
+  castleIsland.position.set(0, -1.0, 0);
   castleIsland.receiveShadow = true;
   castleIsland.castShadow = true;
   envGroup.add(castleIsland);
@@ -136,53 +197,53 @@ export function createGroundAndBridge(scene) {
   // Trecho 1: Ponte reta conectando o Portão Principal (z = 94) à Ilha Octogonal (z = 135)
   // Pilares de pedra no fosso sob a ponte
   for (let pz of [105, 122]) {
-    addCylinder(1.6, 2.2, [-4.5, 1.1, pz], materials.stoneDark, 'bridge pier L', bridgeGroup);
-    addCylinder(1.6, 2.2, [4.5, 1.1, pz], materials.stoneDark, 'bridge pier R', bridgeGroup);
+    addCylinder(1.6, 2.4, [-4.5, -1.0, pz], materials.stoneDark, 'bridge pier L', bridgeGroup);
+    addCylinder(1.6, 2.4, [4.5, -1.0, pz], materials.stoneDark, 'bridge pier R', bridgeGroup);
   }
 
-  // Base estrutural da ponte
-  addBox([18, 1.2, 42], [0, 1.4, 114], materials.stoneDark, 'bridge base', bridgeGroup);
+  // Base estrutural da ponte (topo a y = 0.0)
+  addBox([18, 2.0, 42], [0, -1.0, 114], materials.stoneDark, 'bridge base', bridgeGroup);
 
-  // Margens de grama verde da ponte (altura y = 2.05 para evitar Z-fighting)
-  addBox([5, 0.3, 42], [-6.5, 2.05, 114], materials.islandGrass, 'bridge grass L', bridgeGroup);
-  addBox([5, 0.3, 42], [6.5, 2.05, 114], materials.islandGrass, 'bridge grass R', bridgeGroup);
+  // Margens de grama verde da ponte (topo y = 0.10)
+  addBox([5, 0.1, 42], [-6.5, 0.05, 114], materials.islandGrass, 'bridge grass L', bridgeGroup);
+  addBox([5, 0.1, 42], [6.5, 0.05, 114], materials.islandGrass, 'bridge grass R', bridgeGroup);
 
-  // Caminho de areia central da ponte (altura y = 2.12 - ligeiramente mais alto para eliminar Z-fighting)
-  addBox([8, 0.3, 42], [0, 2.12, 114], materials.path, 'bridge sand path', bridgeGroup);
+  // Caminho de areia central da ponte (topo y = 0.15 - ligeiramente mais alto para eliminar Z-fighting)
+  addBox([8, 0.14, 42], [0, 0.08, 114], materials.path, 'bridge sand path', bridgeGroup);
 
   // Guarda-corpos de madeira ao longo da ponte
   for (let z = 96; z <= 132; z += 6) {
-    addBox([0.25, 1.2, 0.25], [-8.8, 2.7, z], materials.wood, 'rail post L', bridgeGroup);
-    addBox([0.25, 1.2, 0.25], [8.8, 2.7, z], materials.wood, 'rail post R', bridgeGroup);
+    addBox([0.25, 1.2, 0.25], [-8.8, 0.7, z], materials.wood, 'rail post L', bridgeGroup);
+    addBox([0.25, 1.2, 0.25], [8.8, 0.7, z], materials.wood, 'rail post R', bridgeGroup);
   }
-  addBox([0.2, 0.15, 38], [-8.8, 3.2, 114], materials.woodPlanks, 'handrail L', bridgeGroup);
-  addBox([0.2, 0.15, 38], [8.8, 3.2, 114], materials.woodPlanks, 'handrail R', bridgeGroup);
+  addBox([0.2, 0.15, 38], [-8.8, 1.3, 114], materials.woodPlanks, 'handrail L', bridgeGroup);
+  addBox([0.2, 0.15, 38], [8.8, 1.3, 114], materials.woodPlanks, 'handrail R', bridgeGroup);
 
   // Trecho 2: Ilha Octogonal Intermediária (Bastion / Píer Octogonal como na referência de Bodiam)
   const octoRadius = 18;
   const octoBase = new THREE.Mesh(
-    new THREE.CylinderGeometry(octoRadius, octoRadius + 1.5, 2.2, 8),
+    new THREE.CylinderGeometry(octoRadius, octoRadius + 1.5, 2.0, 8),
     materials.stoneLight
   );
   octoBase.rotation.y = Math.PI / 8;
-  octoBase.position.set(0, 1.1, 150);
+  octoBase.position.set(0, -1.0, 150);
   octoBase.castShadow = true;
   octoBase.receiveShadow = true;
   bridgeGroup.add(octoBase);
   collidableObjects.push(octoBase);
 
-  // Superfície de grama verde da ilha octogonal (y = 2.22)
+  // Superfície de grama verde da ilha octogonal (topo y = 0.10)
   const octoGrass = new THREE.Mesh(
-    new THREE.CylinderGeometry(octoRadius - 0.2, octoRadius - 0.2, 0.15, 8),
+    new THREE.CylinderGeometry(octoRadius - 0.2, octoRadius - 0.2, 0.1, 8),
     materials.islandGrass
   );
   octoGrass.rotation.y = Math.PI / 8;
-  octoGrass.position.set(0, 2.22, 150);
+  octoGrass.position.set(0, 0.05, 150);
   octoGrass.receiveShadow = true;
   bridgeGroup.add(octoGrass);
 
-  // Caminho de areia cortando a ilha octogonal (y = 2.28 para evitar Z-fighting)
-  addBox([8, 0.2, 36], [0, 2.28, 150], materials.path, 'octo sand path', bridgeGroup);
+  // Caminho de areia cortando a ilha octogonal (topo y = 0.15 para evitar Z-fighting)
+  addBox([8, 0.14, 36], [0, 0.08, 150], materials.path, 'octo sand path', bridgeGroup);
 
   // Muretas baixas de pedra ornamental ao redor da ilha octogonal
   for (let i = 0; i < 8; i++) {
@@ -190,21 +251,43 @@ export function createGroundAndBridge(scene) {
     if (i !== 2 && i !== 6) { // Deixa livre as passagens de entrada e saída
       const px = Math.sin(angle) * (octoRadius - 0.8);
       const pz = 150 + Math.cos(angle) * (octoRadius - 0.8);
-      const parapet = addBox([7.0, 1.0, 1.0], [px, 2.8, pz], materials.stoneDark, `octo parapet ${i}`, bridgeGroup);
+      const parapet = addBox([7.0, 1.0, 1.0], [px, 0.60, pz], materials.stoneDark, `octo parapet ${i}`, bridgeGroup);
       parapet.rotation.y = -angle + Math.PI / 2;
     }
   }
 
+  // Ruína da Barbacã (Barbican) na ilha octogonal (elemento icônico do modelo base de Bodiam Castle)
+  const barbicanWall = new THREE.Mesh(new THREE.BoxGeometry(2.5, 9.5, 12.0), materials.stoneDark);
+  barbicanWall.position.set(8.5, 4.75, 148);
+  updateMeshMatrix(barbicanWall);
+
+  let barbicanCSG = CSG.fromMesh(barbicanWall);
+  // Portal em arco esculpido via CSG através da muralha em ruína
+  const barbicanArchCutter = createArchCutterCSG(8.5, 0.1, 148, Math.PI / 2, 3.8, 6.5, 6.0);
+  barbicanCSG = barbicanCSG.subtract(barbicanArchCutter);
+
+  // Recortes desgastados via CSG no topo simulando ruína medieval
+  const ruinNotch1 = createArchCutterCSG(8.5, 7.8, 152, Math.PI / 2, 2.4, 3.5, 6.0);
+  const ruinNotch2 = createArchCutterCSG(8.5, 8.2, 144, Math.PI / 2, 2.0, 3.0, 6.0);
+  barbicanCSG = barbicanCSG.subtract(ruinNotch1).subtract(ruinNotch2);
+
+  const finalBarbicanMesh = CSG.toMesh(barbicanCSG, new THREE.Matrix4(), materials.stoneDark);
+  finalBarbicanMesh.castShadow = true;
+  finalBarbicanMesh.receiveShadow = true;
+  finalBarbicanMesh.name = 'ruined barbican wall csg';
+  bridgeGroup.add(finalBarbicanMesh);
+  collidableObjects.push(finalBarbicanMesh);
+
   // Trecho 3: Extensão da ponte em direção à margem externa (z = 168 até z = 205)
-  addBox([14, 1.2, 38], [0, 1.4, 186], materials.stoneDark, 'outer bridge base', bridgeGroup);
-  addBox([3, 0.3, 38], [-5.5, 2.05, 186], materials.islandGrass, 'outer bridge grass L', bridgeGroup);
-  addBox([3, 0.3, 38], [5.5, 2.05, 186], materials.islandGrass, 'outer bridge grass R', bridgeGroup);
-  addBox([8, 0.3, 38], [0, 2.12, 186], materials.path, 'outer bridge sand path', bridgeGroup);
+  addBox([14, 2.0, 38], [0, -1.0, 186], materials.stoneDark, 'outer bridge base', bridgeGroup);
+  addBox([3, 0.1, 38], [-5.5, 0.05, 186], materials.islandGrass, 'outer bridge grass L', bridgeGroup);
+  addBox([3, 0.1, 38], [5.5, 0.05, 186], materials.islandGrass, 'outer bridge grass R', bridgeGroup);
+  addBox([8, 0.14, 38], [0, 0.08, 186], materials.path, 'outer bridge sand path', bridgeGroup);
 
   // Pilares na água sob a extensão da ponte
   for (let pz of [176, 196]) {
-    addCylinder(1.4, 2.2, [-4.0, 1.1, pz], materials.wood, 'timber pier L', bridgeGroup);
-    addCylinder(1.4, 2.2, [4.0, 1.1, pz], materials.wood, 'timber pier R', bridgeGroup);
+    addCylinder(1.4, 2.4, [-4.0, -1.0, pz], materials.wood, 'timber pier L', bridgeGroup);
+    addCylinder(1.4, 2.4, [4.0, -1.0, pz], materials.wood, 'timber pier R', bridgeGroup);
   }
 
   envGroup.add(bridgeGroup);
@@ -220,26 +303,6 @@ export function createGroundAndBridge(scene) {
 const WALL_HEIGHT = 18;
 const WALL_THICKNESS = 5;
 const WALL_LENGTH = 160;
-
-/**
- * Cria a geometria de corte para uma Seteira com parte inferior plana e superior arredondada
- */
-function createSeteiraCutter(width = 1.2, height = 3.6, depth = 8.0) {
-  const boxH = height - width / 2;
-  const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(width, boxH, depth));
-  boxMesh.position.set(0, boxH / 2, 0);
-  updateMeshMatrix(boxMesh);
-
-  const radius = width / 2;
-  const archMesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, depth, 16));
-  archMesh.rotation.x = Math.PI / 2;
-  archMesh.position.set(0, boxH, 0);
-  updateMeshMatrix(archMesh);
-
-  const boxCSG = CSG.fromMesh(boxMesh);
-  const archCSG = CSG.fromMesh(archMesh);
-  return boxCSG.union(archCSG);
-}
 
 /**
  * Cria muralhas com seteiras esculpidas via CSG
@@ -336,9 +399,34 @@ export function createWallsWithCSG(wallsGroup) {
   wallsGroup.add(finalWestMesh);
   collidableObjects.push(finalWestMesh);
 
-  // Muralhas Sul (Lado esquerdo e direito do portão) com seteiras
-  addBox([72, WALL_HEIGHT, WALL_THICKNESS], [-44, WALL_HEIGHT / 2, 80], materials.stone, 'south wall left', wallsGroup);
-  addBox([72, WALL_HEIGHT, WALL_THICKNESS], [44, WALL_HEIGHT / 2, 80], materials.stone, 'south wall right', wallsGroup);
+  // 3. MURALHAS SUL (Lado esquerdo e direito do portão) COM SETEIRAS CSG
+  const southWallLMesh = new THREE.Mesh(new THREE.BoxGeometry(72, WALL_HEIGHT, WALL_THICKNESS), materials.stone);
+  southWallLMesh.position.set(-44, WALL_HEIGHT / 2, 80);
+  updateMeshMatrix(southWallLMesh);
+  let southLCSG = CSG.fromMesh(southWallLMesh);
+  for (let sx of [-60, -32]) {
+    southLCSG = southLCSG.subtract(createSeteiraCutterCSG(sx, 12, 80, 0, 1.2, 3.2, 8.0));
+  }
+  const finalSouthLMesh = CSG.toMesh(southLCSG, auxMat, materials.stone);
+  finalSouthLMesh.castShadow = true;
+  finalSouthLMesh.receiveShadow = true;
+  finalSouthLMesh.name = 'south wall left with csg seteiras';
+  wallsGroup.add(finalSouthLMesh);
+  collidableObjects.push(finalSouthLMesh);
+
+  const southWallRMesh = new THREE.Mesh(new THREE.BoxGeometry(72, WALL_HEIGHT, WALL_THICKNESS), materials.stone);
+  southWallRMesh.position.set(44, WALL_HEIGHT / 2, 80);
+  updateMeshMatrix(southWallRMesh);
+  let southRCSG = CSG.fromMesh(southWallRMesh);
+  for (let sx of [32, 60]) {
+    southRCSG = southRCSG.subtract(createSeteiraCutterCSG(sx, 12, 80, 0, 1.2, 3.2, 8.0));
+  }
+  const finalSouthRMesh = CSG.toMesh(southRCSG, auxMat, materials.stone);
+  finalSouthRMesh.castShadow = true;
+  finalSouthRMesh.receiveShadow = true;
+  finalSouthRMesh.name = 'south wall right with csg seteiras';
+  wallsGroup.add(finalSouthRMesh);
+  collidableObjects.push(finalSouthRMesh);
 
   // Passadiços, Ameias, Escada e Prancha de queda
   createWallWalkways(wallsGroup);
@@ -353,9 +441,32 @@ export function createWallsWithCSG(wallsGroup) {
 export function createGatehouseWithCSGPortico(gatehouseGroup) {
   const auxMat = new THREE.Matrix4();
 
-  // Torres gêmeas retangulares ladeando o portão
-  addBox([14, 26, 22], [-11, 13, 85], materials.stoneDark, 'gatehouse tower L', gatehouseGroup);
-  addBox([14, 26, 22], [11, 13, 85], materials.stoneDark, 'gatehouse tower R', gatehouseGroup);
+  // Torres gêmeas retangulares ladeando o portão com seteiras CSG
+  const ghTowerLMesh = new THREE.Mesh(new THREE.BoxGeometry(14, 26, 22), materials.stoneDark);
+  ghTowerLMesh.position.set(-11, 13, 85);
+  updateMeshMatrix(ghTowerLMesh);
+  let ghTLCSG = CSG.fromMesh(ghTowerLMesh);
+  ghTLCSG = ghTLCSG.subtract(createSeteiraCutterCSG(-11, 10, 96, 0, 1.2, 3.2, 6.0));
+  ghTLCSG = ghTLCSG.subtract(createSeteiraCutterCSG(-11, 18, 96, 0, 1.2, 3.2, 6.0));
+  const finalGHTLMesh = CSG.toMesh(ghTLCSG, auxMat, materials.stoneDark);
+  finalGHTLMesh.castShadow = true;
+  finalGHTLMesh.receiveShadow = true;
+  finalGHTLMesh.name = 'gatehouse tower L csg';
+  gatehouseGroup.add(finalGHTLMesh);
+  collidableObjects.push(finalGHTLMesh);
+
+  const ghTowerRMesh = new THREE.Mesh(new THREE.BoxGeometry(14, 26, 22), materials.stoneDark);
+  ghTowerRMesh.position.set(11, 13, 85);
+  updateMeshMatrix(ghTowerRMesh);
+  let ghTRCSG = CSG.fromMesh(ghTowerRMesh);
+  ghTRCSG = ghTRCSG.subtract(createSeteiraCutterCSG(11, 10, 96, 0, 1.2, 3.2, 6.0));
+  ghTRCSG = ghTRCSG.subtract(createSeteiraCutterCSG(11, 18, 96, 0, 1.2, 3.2, 6.0));
+  const finalGHTRMesh = CSG.toMesh(ghTRCSG, auxMat, materials.stoneDark);
+  finalGHTRMesh.castShadow = true;
+  finalGHTRMesh.receiveShadow = true;
+  finalGHTRMesh.name = 'gatehouse tower R csg';
+  gatehouseGroup.add(finalGHTRMesh);
+  collidableObjects.push(finalGHTRMesh);
 
   // Bloco de entrada central do Gatehouse onde esculpimos o Pórtico via CSG
   const porticoBlock = new THREE.Mesh(
@@ -385,11 +496,30 @@ export function createGatehouseWithCSGPortico(gatehouseGroup) {
   gatehouseGroup.add(finalPorticoMesh);
   collidableObjects.push(finalPorticoMesh);
 
+  // Rastrilho medieval de ferro (Portcullis) suspenso sob o arco do pórtico (fidelidade ao modelo base)
+  const portcullisGroup = new THREE.Group();
+  portcullisGroup.name = 'Gatehouse Portcullis';
+  for (let bx = -3.0; bx <= 3.0; bx += 0.85) {
+    addBox([0.08, 6.0, 0.08], [bx, 9.5, 85.5], materials.iron, 'portcullis bar', portcullisGroup, false);
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.25, 4), materials.iron);
+    spike.position.set(bx, 6.4, 85.5);
+    spike.rotation.x = Math.PI;
+    portcullisGroup.add(spike);
+  }
+  for (let by of [7.5, 9.8, 12.0]) {
+    addBox([6.8, 0.08, 0.08], [0, by, 85.5], materials.iron, 'portcullis beam', portcullisGroup, false);
+  }
+  gatehouseGroup.add(portcullisGroup);
+
   // Ameias superiores do Gatehouse
   for (let x of [-15, -11, -7, 7, 11, 15]) {
     addBox([3, 2, 3], [x, 27, 94.5], materials.stone, 'gh merlon front', gatehouseGroup);
     addBox([3, 2, 3], [x, 27, 75.5], materials.stone, 'gh merlon back', gatehouseGroup);
   }
+
+  // Piso sob o pórtico: fecha o vão entre a ilha (z = 80) e a ponte (z = 93)
+addBox([17.8, 2.0, 13], [0, -1.0, 86.5], materials.stoneDark, 'gatehouse floor base', gatehouseGroup);
+addBox([8, 0.14, 13], [0, 0.08, 86.5], materials.path, 'gatehouse sand path', gatehouseGroup);
 
   // Porta fortificada posicionada no interior do pórtico
   createDoorWithPivot([0, 0, 82], [7.6, 11, 0.8], 'main gate door', gatehouseGroup);
@@ -403,26 +533,75 @@ export function createGatehouseWithCSGPortico(gatehouseGroup) {
 export function createAccessibleTowersWithCSG(towersGroup) {
   const auxMat = new THREE.Matrix4();
 
-  // Configuração das 4 torres de canto
+  // Configuração das 4 torres de canto cilíndricas
+  // Cada torre possui portais em arco conectando aos passadiços das muralhas
   const cornerTowersConfig = [
-    { pos: [-80, -80], name: 'Tower_NW', doorwayAngle: Math.PI / 4, enterX: -74.5, enterZ: -74.5 },
-    { pos: [80, -80],  name: 'Tower_NE', doorwayAngle: (3 * Math.PI) / 4, enterX: 74.5, enterZ: -74.5 },
-    { pos: [-80, 80],  name: 'Tower_SW', doorwayAngle: -Math.PI / 4, enterX: -74.5, enterZ: 74.5 },
-    { pos: [80, 80],   name: 'Tower_SE', doorwayAngle: -(3 * Math.PI) / 4, enterX: 74.5, enterZ: 74.5 }
+    {
+      pos: [-80, -80],
+      name: 'Tower_NW',
+      portals: [
+        { x: -73, y: 17.5, z: -78, rotY: Math.PI / 2, name: 'north entrance' },
+        { x: -78, y: 17.5, z: -73, rotY: 0,           name: 'west entrance' }
+      ],
+      slits: [
+        { angle: (5 * Math.PI) / 4, y: 9.0 },
+        { angle: (5 * Math.PI) / 4, y: 15.0 },
+        { angle: Math.PI,          y: 12.0 }
+      ]
+    },
+    {
+      pos: [80, -80],
+      name: 'Tower_NE',
+      portals: [
+        { x: 73, y: 17.5, z: -78, rotY: Math.PI / 2, name: 'north entrance' },
+        { x: 78, y: 17.5, z: -73, rotY: 0,           name: 'east entrance' }
+      ],
+      slits: [
+        { angle: (7 * Math.PI) / 4, y: 9.0 },
+        { angle: (7 * Math.PI) / 4, y: 15.0 },
+        { angle: 0,                 y: 12.0 }
+      ]
+    },
+    {
+      pos: [-80, 80],
+      name: 'Tower_SW',
+      portals: [
+        { x: -73, y: 17.5, z: 78, rotY: Math.PI / 2, name: 'south entrance' },
+        { x: -78, y: 17.5, z: 73, rotY: 0,           name: 'west entrance' }
+      ],
+      slits: [
+        { angle: (3 * Math.PI) / 4, y: 9.0 },
+        { angle: (3 * Math.PI) / 4, y: 15.0 },
+        { angle: Math.PI / 2,       y: 12.0 }
+      ]
+    },
+    {
+      pos: [80, 80],
+      name: 'Tower_SE',
+      portals: [
+        { x: 73, y: 17.5, z: 78, rotY: Math.PI / 2, name: 'south entrance' },
+        { x: 78, y: 17.5, z: 73, rotY: 0,           name: 'east entrance' }
+      ],
+      slits: [
+        { angle: Math.PI / 4,       y: 9.0 },
+        { angle: Math.PI / 4,       y: 15.0 },
+        { angle: Math.PI / 2,       y: 12.0 }
+      ]
+    }
   ];
 
   cornerTowersConfig.forEach((cfg) => {
     const tx = cfg.pos[0];
     const tz = cfg.pos[1];
 
-    // 1. Cilindro sólido externo da torre
+    // 1. Cilindro sólido da torre cilíndrica (mergulha na água até y = -2.0)
     const towerRadius = 9.0;
-    const towerHeight = 30.0;
+    const towerHeight = 32.0;
     const towerMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(towerRadius, towerRadius, towerHeight, 32),
       materials.stoneDark
     );
-    towerMesh.position.set(tx, 15, tz);
+    towerMesh.position.set(tx, 14, tz);
     updateMeshMatrix(towerMesh);
 
     let towerCSG = CSG.fromMesh(towerMesh);
@@ -430,7 +609,7 @@ export function createAccessibleTowersWithCSG(towersGroup) {
     // 2. CSG SUBTRAÇÃO 1: Esvazia o interior superior da torre (Deck / Plataforma acessível)
     // Deixa um piso firme na altura do passadiço (y = 17.5) e um parapeito de pedra ao redor
     const innerRadius = 7.6;
-    const deckHollowHeight = 13.5;
+    const deckHollowHeight = 14.5;
     const deckHollowMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(innerRadius, innerRadius, deckHollowHeight, 32)
     );
@@ -439,34 +618,21 @@ export function createAccessibleTowersWithCSG(towersGroup) {
 
     towerCSG = towerCSG.subtract(CSG.fromMesh(deckHollowMesh));
 
-    // 3. CSG SUBTRAÇÃO 2: Esculpe a abertura de acesso em arco (Pórtico de entrada na torre)
-    // Conectando diretamente o passadiço da muralha (y = 17.5) à plataforma interna da torre
-    const doorW = 3.6;
-    const doorH = 5.2;
-    const doorDepth = 6.0;
+    // 3. CSG SUBTRAÇÃO 2: Esculpe as aberturas de acesso em arco (Portais conectando aos passadiços)
+    // Permitindo ao jogador caminhar livremente da muralha para dentro da torre
+    for (const portal of cfg.portals) {
+      const archCutter = createArchCutterCSG(portal.x, portal.y, portal.z, portal.rotY, 3.4, 5.2, 9.0);
+      towerCSG = towerCSG.subtract(archCutter);
+    }
 
-    const doorBox = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, doorDepth));
-    doorBox.position.set(0, doorH / 2, 0);
-    updateMeshMatrix(doorBox);
-
-    const doorArch = new THREE.Mesh(new THREE.CylinderGeometry(doorW / 2, doorW / 2, doorDepth, 16));
-    doorArch.rotation.x = Math.PI / 2;
-    doorArch.position.set(0, doorH, 0);
-    updateMeshMatrix(doorArch);
-
-    const archCutterCSG = CSG.fromMesh(doorBox).union(CSG.fromMesh(doorArch));
-
-    // Posiciona e rotaciona o cortador na direção da passagem que conecta ao passadiço
-    const doorwayHelper = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1));
-    doorwayHelper.position.set(cfg.enterX, 17.5, cfg.enterZ);
-    doorwayHelper.rotation.y = cfg.doorwayAngle;
-    updateMeshMatrix(doorwayHelper);
-
-    // Converte o cortador no espaço global
-    const placedCutterMesh = CSG.toMesh(archCutterCSG, doorwayHelper.matrix, materials.stoneDark);
-    updateMeshMatrix(placedCutterMesh);
-
-    towerCSG = towerCSG.subtract(CSG.fromMesh(placedCutterMesh));
+    // 4. CSG SUBTRAÇÃO 3: Esculpe seteiras na fachada externa da torre voltada para o fosso
+    for (const slit of cfg.slits) {
+      const slitX = tx + Math.cos(slit.angle) * 8.5;
+      const slitZ = tz + Math.sin(slit.angle) * 8.5;
+      const slitRotY = -slit.angle + Math.PI / 2;
+      const slitCutter = createSeteiraCutterCSG(slitX, slit.y, slitZ, slitRotY, 1.0, 3.0, 5.0);
+      towerCSG = towerCSG.subtract(slitCutter);
+    }
 
     // Converte de volta para Mesh Three.js
     const finalTowerMesh = CSG.toMesh(towerCSG, auxMat, materials.stoneDark);
@@ -476,17 +642,17 @@ export function createAccessibleTowersWithCSG(towersGroup) {
     towersGroup.add(finalTowerMesh);
     collidableObjects.push(finalTowerMesh);
 
-    // 4. Piso plano da plataforma superior da torre (y = 17.5) para colisão e caminhabilidade
+    // 5. Piso plano da plataforma superior da torre (y = 17.5) para colisão e caminhabilidade
     const floorMesh = new THREE.Mesh(
       new THREE.CylinderGeometry(innerRadius, innerRadius, 0.4, 24),
       materials.roof
     );
-    floorMesh.position.set(tx, 17.3, tz);
+    floorMesh.position.set(tx, 17.4, tz);
     floorMesh.receiveShadow = true;
     towersGroup.add(floorMesh);
     collidableObjects.push(floorMesh);
 
-    // 5. Ameias cilíndricas no topo da torre para acabamento arquitetônico
+    // 6. Ameias cilíndricas no topo da torre para acabamento arquitetônico
     for (let merlon = 0; merlon < 10; merlon += 1) {
       const angle = (merlon / 10) * Math.PI * 2;
       addBox(
@@ -547,11 +713,27 @@ export function createWallStairs(wallsGroup) {
   const baseX = -73.5;
   const baseZ = -22;
 
+  // Degraus visuais (sem colisão direta para movimento perfeitamente suave)
   for (let i = 0; i < numSteps; i += 1) {
     const y = stepHeight / 2 + i * stepHeight;
     const z = baseZ + i * stepDepth;
-    addBox([stepWidth, stepHeight, stepDepth], [baseX, y, z], materials.stoneDark, `wall stair step ${i + 1}`, wallsGroup);
+    addBox([stepWidth, stepHeight, stepDepth], [baseX, y, z], materials.stoneDark, `wall stair step ${i + 1}`, wallsGroup, false);
   }
+
+  // Rampa de colisão matemática perfeitamente linear da muralha
+  const run = numSteps * stepDepth;
+  const length = Math.sqrt(run * run + totalHeight * totalHeight);
+  const angle = Math.atan2(totalHeight, run);
+
+  const rampZ = baseZ + (run / 2 - 0.5);
+  const rampY = totalHeight / 2;
+  const rampGeom = new THREE.BoxGeometry(stepWidth, 0.2, length);
+  const rampMat = new THREE.MeshBasicMaterial({ visible: false });
+  const rampMesh = new THREE.Mesh(rampGeom, rampMat);
+  rampMesh.position.set(baseX, rampY, rampZ);
+  rampMesh.rotation.x = -angle;
+  wallsGroup.add(rampMesh);
+  collidableObjects.push(rampMesh);
 }
 
 export function createDropPlatform(wallsGroup) {
@@ -576,6 +758,7 @@ export function createBuilding(position, name, stairDirection, buildingsGroup) {
   const gDepth = 20;
   const gY = gHeight / 2;
 
+  // --- TÉRREO (Espaço Oco Habitável com Piso de Madeira) ---
   addBox([gWidth - t * 2, 0.2, gDepth - t * 2], [x, 0.1, z], materials.floorWood, `${name} floor`, group);
   addBox([t, gHeight, gDepth], [x - gWidth / 2 + t / 2, gY, z], materials.stone, `${name} wall left`, group);
   addBox([t, gHeight, gDepth], [x + gWidth / 2 - t / 2, gY, z], materials.stone, `${name} wall right`, group);
@@ -593,24 +776,49 @@ export function createBuilding(position, name, stairDirection, buildingsGroup) {
 
   createDoorWithPivot([x, 0, z + gDepth / 2 - t / 2], [doorW, doorH, 0.6], `${name} door`, group);
 
-  // Andar Superior
-  const uWidth = 22;
-  const uHeight = 6;
-  const uDepth = 18;
-  const uBaseY = gHeight;
-  const uY = uBaseY + uHeight / 2;
+  // --- TETO / TERRAÇO CAMINHÁVEL DA CASA (As escadas levam diretamente para o teto da casa) ---
+  // Piso do teto da casa a y = 6.0
+  addBox([gWidth, 0.4, gDepth], [x, 5.8, z], materials.stoneLight, `${name} roof floor`, group);
 
-  addBox([gWidth, 1, gDepth], [x, uBaseY + 0.5, z], materials.wood, `${name} ceiling`, group);
-  addBox([t, uHeight, uDepth], [x - uWidth / 2 + t / 2, uY, z], materials.stone, `${name} up wall left`, group);
-  addBox([t, uHeight, uDepth], [x + uWidth / 2 - t / 2, uY, z], materials.stone, `${name} up wall right`, group);
-  addBox([uWidth - t * 2, uHeight, t], [x, uY, z - uDepth / 2 + t / 2], materials.stone, `${name} up wall back`, group);
-  addBox([uWidth - t * 2, uHeight, t], [x, uY, z + uDepth / 2 - t / 2], materials.stone, `${name} up wall front`, group);
+  // Muretas / Ameias de proteção ao redor do teto
+  const parapetH = 1.2;
+  const parapetY = 6.0 + parapetH / 2;
 
-  addBox([26, 2.5, 22], [x, uBaseY + uHeight + 1.25, z], materials.roof, `${name} roof`, group);
+  // Parapeto traseiro (fundo)
+  addBox([gWidth, parapetH, 0.6], [x, parapetY, z - gDepth / 2 + 0.3], materials.stoneDark, `${name} roof back parapet`, group);
+  // Parapeto frontal
+  addBox([gWidth, parapetH, 0.6], [x, parapetY, z + gDepth / 2 - 0.3], materials.stoneDark, `${name} roof front parapet`, group);
 
+  // Parapeto do lado oposto à escada (fechado)
+  const farWallX = x < 0 ? (x + gWidth / 2 - 0.3) : (x - gWidth / 2 + 0.3);
+  addBox([0.6, parapetH, gDepth], [farWallX, parapetY, z], materials.stoneDark, `${name} roof far parapet`, group);
+
+  // Parapeto do lado da escada (com vão de 4m permitindo entrar no teto)
+  const nearWallX = x < 0 ? (x - gWidth / 2 + 0.3) : (x + gWidth / 2 - 0.3);
+  if (stairDirection === 1) {
+    // Escada sobe de -Z para +Z e chega por volta de z = -29
+    addBox([0.6, parapetH, 13.5], [nearWallX, parapetY, z - 3.25], materials.stoneDark, `${name} roof near parapet`, group);
+  } else {
+    // Escada sobe de +Z para -Z e chega por volta de z = 29
+    addBox([0.6, parapetH, 13.5], [nearWallX, parapetY, z + 3.25], materials.stoneDark, `${name} roof near parapet`, group);
+  }
+
+  // Ameias decorativas nas bordas do teto
+  for (let ox = -gWidth / 2 + 2; ox <= gWidth / 2 - 2; ox += 4.5) {
+    addBox([1.8, 0.6, 0.8], [x + ox, parapetY + parapetH / 2 + 0.3, z - gDepth / 2 + 0.3], materials.stone, `${name} merlon B`, group);
+    addBox([1.8, 0.6, 0.8], [x + ox, parapetY + parapetH / 2 + 0.3, z + gDepth / 2 - 0.3], materials.stone, `${name} merlon F`, group);
+  }
+
+  // --- ESCADA EXTERNA E PATAMAR DE CONEXÃO AO TETO ---
   const stairX = x < 0 ? x - 14 : x + 14;
   const stairZ = stairDirection === 1 ? z - 6 : z + 6;
   createStaircase(stairX, stairZ, stairDirection, 6, group, `${name} stair`);
+
+  // Patamar de desembarque no topo da escada conectando fisicamente à abertura do teto
+  const landingZ = stairDirection === 1 ? (stairZ + 11.5) : (stairZ - 11.5);
+  const platWidth = 4.5;
+  const platX = x < 0 ? (stairX + 2.0) : (stairX - 2.0);
+  addBox([platWidth, 0.4, 3.2], [platX, 5.8, landingZ], materials.stoneLight, `${name} stair landing`, group);
 
   buildingsGroup.add(group);
   return group;
@@ -631,6 +839,28 @@ export function createInnerLayout(buildingsGroup) {
   addBox([30, 3, 20], [-50, 1.5, 60], materials.stoneDark, 'ruin 3', buildingsGroup);
   addBox([15, 8, 15], [-68, 4, 65], materials.stone, 'ruin 4', buildingsGroup);
   addBox([40, 5, 12], [0, 2.5, -72], materials.stoneLight, 'north ruin', buildingsGroup);
+}
+
+// Muralhas baixas em "L" dos dois lados do portão (como na referência de Bodiam)
+export function createFrontLWalls(wallsGroup) {
+  const wallH = 12;            // mais baixa que a muralha principal (18)
+  const wallY = wallH / 2 - 2; // base mergulha na água (y = -2)
+
+  for (const side of [-1, 1]) {
+    // Trecho frontal avançado: da torre do portão (|x| = 18) até |x| = 62, em z = 88
+    addBox([44, wallH + 2, 4], [side * 40, wallY + 1, 88], materials.stone, `front L wall ${side}`, wallsGroup);
+
+    // Retorno perpendicular: liga o trecho frontal à muralha principal (forma o L)
+    addBox([4, wallH + 2, 8], [side * 62, wallY + 1, 85], materials.stone, `front L return ${side}`, wallsGroup);
+
+    // Piso de pedra entre a muralha principal e a frontal (fecha o vão sobre a água)
+    addBox([40, 2.0, 7], [side * 40, -1.0, 85.5], materials.stoneDark, `front L ground ${side}`, wallsGroup);
+
+    // Ameias no trecho frontal
+    for (let x = 20; x <= 60; x += 6) {
+      addBox([3, 1.6, 1.5], [side * x, wallH - 0.2, 88], materials.stone, `front L merlon ${side}`, wallsGroup);
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -658,6 +888,7 @@ export function createCastle(scene) {
 
   // 2. Muralhas com Seteiras CSG (Ambiente - 5 pontos)
   createWallsWithCSG(wallsGroup);
+  
 
   // 3. Pórtico do Portão Principal via CSG (Ambiente - 5 pontos)
   createGatehouseWithCSGPortico(gatehouseGroup);
